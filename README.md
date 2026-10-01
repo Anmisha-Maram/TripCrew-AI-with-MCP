@@ -1,9 +1,9 @@
-# TripCrew AI ✈️
+# TripCrew AI with MCP ✈️
 
-**A multi-agent AI travel planner built with LangGraph.**
-Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to Delhi"*, and a crew of four AI agents finds live flights, searches hotels, plans each day and writes a complete travel plan. While they work, the page shows photos of the destination's top attractions.
+**A multi-agent AI travel planner built with LangGraph and the Model Context Protocol (MCP).**
+Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to Delhi"*, and a crew of AI agents finds live flights, searches hotels, plans each day and writes a complete travel plan. While they work, the page shows photos of the destination's top attractions.
 
-![TripCrew AI planning a trip to Paris](docs/screenshots/paris-planning.png)
+> 🚧 **Phase 2, in progress.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moves the tools to **MCP servers** and adds a weather agent, guardrails, a PII filter and human-in-the-loop approval. See **Phase 2 progress** below.
 
 ---
 
@@ -17,12 +17,6 @@ Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to 
 - **Download your plan as a PDF**, with a clean, printer-friendly layout.
 - **Conversation memory** with LangGraph's PostgreSQL checkpointer, falling back to in-memory storage when no database is set.
 - **Free-tier friendly:** trimmed tool results, capped response length, low reasoning effort and automatic retry when Groq's rate limit is hit.
-
-## 📸 Screenshots
-
-| Delhi: Red Fort | Delhi: India Gate |
-|---|---|
-| ![All four agents done for a Delhi trip](docs/screenshots/delhi-red-fort.png) | ![India Gate in the attraction gallery](docs/screenshots/delhi-india-gate.png) |
 
 ---
 
@@ -56,7 +50,8 @@ The **attraction gallery** runs separately. A small model (`openai/gpt-oss-20b`)
 |---|---|
 | Agents and orchestration | LangGraph, LangChain |
 | LLM | Groq: `openai/gpt-oss-120b` (agents), `openai/gpt-oss-20b` (attractions) |
-| Tools and APIs | AviationStack, Tavily, Wikipedia REST API |
+| Tools and APIs | AviationStack, Tavily, OpenWeather, Wikipedia REST API |
+| MCP | `mcp` (FastMCP servers), `langchain-mcp-adapters` |
 | Backend | Python 3.11, FastAPI, Uvicorn, streaming responses |
 | Database | PostgreSQL (LangGraph checkpointer) |
 | Frontend | HTML, CSS, JavaScript, marked + DOMPurify (Markdown), html2pdf.js (PDF) |
@@ -74,6 +69,9 @@ TripCrew-AI/
 │   ├── flight_tool.py      # AviationStack + text → airport-code route parsing
 │   ├── tavily_tool.py      # Hotel / web search
 │   └── destination_tool.py # Attractions + Wikipedia photos for the gallery
+├── mcp_servers/
+│   ├── weather_server.py       # Weather MCP server (OpenWeather 5-day forecast)
+│   └── test_weather_server.py  # Tests the server as a real MCP client
 ├── templates/
 │   └── index.html          # Web page
 └── static/
@@ -94,6 +92,7 @@ TripCrew-AI/
   - Groq: <https://console.groq.com/keys>
   - Tavily: <https://app.tavily.com>
   - AviationStack: <https://aviationstack.com> (sign up on the APILayer dashboard)
+  - OpenWeather: <https://home.openweathermap.org/api_keys> (new keys can take up to 2 hours to activate)
 
 ### 2. Clone the repository
 
@@ -139,6 +138,9 @@ TAVILY_API_KEY=your_tavily_api_key
 # AviationStack (live flights)
 AVIATIONSTACK_API_KEY=your_aviationstack_api_key
 
+# OpenWeather (weather MCP server)
+OPENWEATHER_API_KEY=your_openweather_api_key
+
 # Optional: airport used when only a destination is given (default: DEL)
 DEFAULT_ORIGIN_IATA=DEL
 
@@ -169,6 +171,14 @@ Open **<http://127.0.0.1:8000>** in your browser and try:
 python test.py
 ```
 
+### 8. (Optional) Test the weather MCP server
+
+```bash
+python mcp_servers/test_weather_server.py
+```
+
+This starts the server, lists its tools and asks for forecasts for a few cities.
+
 ---
 
 ## 🔌 API endpoints
@@ -187,13 +197,14 @@ python test.py
 - **AviationStack free plan:** 100 requests per month.
 - Attraction photos come from Wikipedia and are credited under each image.
 
-## 🗺️ Roadmap
+## 🗺️ Phase 2 progress
 
-- [ ] Weather agent with a custom **MCP** server (OpenWeather)
-- [ ] Tools connected through the **Model Context Protocol (MCP)**
-- [ ] **Supervisor agent** that decides which agents to run
-- [ ] **Input guardrails** to block off-topic requests
-- [ ] **Human-in-the-loop:** approve or revise the plan before it's finalised
+- [x] **Step 1: Weather MCP server.** A custom OpenWeather server (`mcp_servers/weather_server.py`), standalone and tested
+- [ ] **Step 2: Tools on MCP.** Weather MCP, a flight MCP server wrapping the AviationStack tool, and Tavily's hosted MCP, connected to LangGraph with `langchain-mcp-adapters` (`MultiServerMCPClient`)
+- [ ] **Step 3: Weather agent.** Indoor vs outdoor suggestions for each day, based on the forecast
+- [ ] **Step 4: Input guardrails.** Block off-topic, unsafe and prompt-injection requests before any tools run
+- [ ] **Step 5: PII filter.** Mask emails, phone numbers, passport, Aadhaar, PAN and card numbers before they reach the LLM, logs or database
+- [ ] **Step 6: Human-in-the-loop.** Pause after the draft itinerary with LangGraph `interrupt()`, approve or request changes in the UI, and download only approved plans as PDF
 - [ ] Deploy online
 
 ## 🙏 Acknowledgements
