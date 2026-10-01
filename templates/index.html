@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TripCrew AI – Your AI travel planner</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">TripCrew <span>AI</span></div>
+    <div class="tagline">Your AI travel planner</div>
+  </header>
+
+  <main class="layout">
+
+    <!-- LEFT: search + the 4 agents -->
+    <aside class="glass sidebar">
+      <h1>Where to next?</h1>
+      <p class="subtitle">Tell our crew of AI agents about your trip.</p>
+
+      <form id="trip-form" class="trip-form">
+        <textarea
+          id="trip-input"
+          rows="3"
+          placeholder="Plan a trip that… e.g. a 5-day trip to Jaipur from Delhi"
+          required
+        ></textarea>
+        <button type="submit" id="plan-button">Plan my trip</button>
+      </form>
+
+      <!-- One box per agent; script.js updates the status text -->
+      <ol class="agents" id="progress">
+        <li data-agent="flight_agent">
+          <span class="agent-icon">✈️</span>
+          <span class="agent-text"><strong>Flight agent</strong><small>Finding flights</small></span>
+          <span class="agent-status">Waiting</span>
+        </li>
+        <li data-agent="hotel_agent">
+          <span class="agent-icon">🏨</span>
+          <span class="agent-text"><strong>Hotel agent</strong><small>Searching hotels</small></span>
+          <span class="agent-status">Waiting</span>
+        </li>
+        <li data-agent="itinerary_agent">
+          <span class="agent-icon">🗺️</span>
+          <span class="agent-text"><strong>Itinerary agent</strong><small>Planning the days</small></span>
+          <span class="agent-status">Waiting</span>
+        </li>
+        <li data-agent="final_agent">
+          <span class="agent-icon">📝</span>
+          <span class="agent-text"><strong>Final agent</strong><small>Writing your plan</small></span>
+          <span class="agent-status">Waiting</span>
+        </li>
+      </ol>
+
+      <p class="error" id="error" hidden></p>
+    </aside>
+
+    <!-- RIGHT: photo gallery. Two layers so one photo can fade into the next.
+         Each layer = a blurred copy (fills the frame) + the whole photo on top (never cut off). -->
+    <section class="gallery" aria-label="Photos of the destination">
+      <div class="gallery-layer" id="bg-a"><div class="gallery-fill"></div><img class="gallery-photo" alt=""></div>
+      <div class="gallery-layer" id="bg-b"><div class="gallery-fill"></div><img class="gallery-photo" alt=""></div>
+      <div class="gallery-shade"></div>
+
+      <div class="destination-chip" id="destination-chip" hidden></div>
+
+      <div class="caption" id="caption" aria-live="polite">
+        <div class="caption-dots" id="caption-dots"></div>
+        <div class="caption-name" id="caption-name"></div>
+        <div class="caption-text" id="caption-text"></div>
+        <a class="caption-credit" id="caption-credit" href="#" target="_blank" rel="noopener" hidden>Photo: Wikipedia</a>
+      </div>
+    </section>
+
+    <!-- BELOW: the final plan -->
+    <article class="glass result" id="result" hidden>
+      <div class="result-actions">
+        <button type="button" class="download-button" id="download-button">⬇ Download PDF</button>
+      </div>
+      <div class="result-body" id="result-body"></div>
+      <p class="result-meta" id="result-meta"></p>
+    </article>
+
+  </main>
+
+  <!-- Markdown -> HTML, and DOMPurify to make that HTML safe to show -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <!-- Turns HTML into a downloadable PDF, right in the browser -->
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
+  <script src="/static/script.js"></script>
+</body>
+</html>

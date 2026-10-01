@@ -1,3 +1,14 @@
+# ===== TripCrew AI rules =====
+# Secrets (API keys) - never commit
+.env
+
+# Rules file for the coding assistant (kept local)
+claude.md
+
+# Editor settings
+.vscode/
+
+# ===== Standard Python template from GitHub =====
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

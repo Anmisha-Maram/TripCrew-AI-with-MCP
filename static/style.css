@@ -1,0 +1,603 @@
+/* =========================
+   Basics
+   ========================= */
+
+:root {
+  --text: #f8fafc;
+  --muted: #cbd5e1;
+  --accent: #fbbf24;          /* warm gold */
+  --accent-dark: #f59e0b;
+  --green: #34d399;
+  --glass: rgba(15, 23, 42, 0.6);
+  --glass-strong: rgba(15, 23, 42, 0.82);
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 22px;
+  --fade: 1.4s;               /* photo crossfade time */
+  --topbar: 76px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  font-family: "Inter", system-ui, sans-serif;
+  color: var(--text);
+}
+
+/* Calm dark page background with soft colour glows */
+body {
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(14, 116, 144, 0.35), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(180, 83, 9, 0.25), transparent 60%),
+    #0b1120;
+  background-attachment: fixed;
+}
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+/* =========================
+   Top bar
+   ========================= */
+
+.topbar {
+  height: var(--topbar);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 clamp(16px, 3vw, 40px);
+}
+
+.brand {
+  font-family: "Playfair Display", serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.brand span { color: var(--accent); }
+
+.tagline {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+
+/* =========================
+   Layout: sidebar on the left, photos on the right, plan below
+   ========================= */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) 1fr;
+  gap: clamp(16px, 2vw, 28px);
+  padding: 0 clamp(16px, 3vw, 40px) 40px;
+}
+
+.sidebar,
+.gallery {
+  /* Both fill the screen height under the top bar */
+  height: calc(100vh - var(--topbar) - 32px);
+  min-height: 560px;
+}
+
+.result { grid-column: 1 / -1; }   /* the plan spans both columns */
+
+/* =========================
+   Sidebar: search
+   ========================= */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 28px 24px;
+  overflow-y: auto;
+}
+
+.sidebar h1 {
+  margin: 0 0 6px;
+  font-family: "Playfair Display", serif;
+  font-size: 2.2rem;
+  line-height: 1.1;
+}
+
+.subtitle {
+  margin: 0 0 20px;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+.trip-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trip-form textarea {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.trip-form textarea::placeholder { color: #94a3b8; }
+
+.trip-form textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.2);
+}
+
+.trip-form button {
+  padding: 14px 20px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  color: #1f2937;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.2s ease;
+}
+
+.trip-form button:hover { transform: translateY(-1px); }
+.trip-form button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+
+/* =========================
+   Sidebar: the 4 agent boxes
+   ========================= */
+
+.agents {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agents li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.agent-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 1.1rem;
+}
+
+.agent-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-text strong { font-size: 0.92rem; font-weight: 600; }
+.agent-text small { color: #94a3b8; font-size: 0.8rem; }
+
+.agent-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* Working: gold border + spinner */
+.agents li.active {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.agents li.active .agent-status { color: var(--accent); }
+
+.agents li.active .agent-status::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Done: green tick */
+.agents li.done .agent-status { color: var(--green); }
+.agents li.done .agent-status::before { content: "✓"; font-weight: 700; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error {
+  margin: 16px 0 0;
+  color: #fca5a5;
+  font-size: 0.9rem;
+}
+
+/* =========================
+   Gallery (right side)
+   ========================= */
+
+.gallery {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  /* Shown if no photo loads at all */
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #0e7490 100%);
+}
+
+.gallery-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity var(--fade) ease-in-out;
+}
+
+.gallery-layer.visible { opacity: 1; }
+
+/* Blurred copy of the photo fills the empty space around it */
+.gallery-fill {
+  position: absolute;
+  inset: -60px;                      /* bigger than the frame so blurred edges stay hidden */
+  background-size: cover;
+  background-position: center;
+  filter: blur(36px) brightness(0.55) saturate(1.3);
+}
+
+/* The whole photo, never cut off ("contain"). The 5% gap leaves room for the slow zoom. */
+.gallery-photo {
+  position: absolute;
+  inset: 5% 5% 14%;                  /* extra space at the bottom for the caption */
+  width: 90%;
+  height: 81%;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.55));
+}
+
+/* Slow movement, small enough that the photo always stays inside the frame */
+.gallery-photo.kb-1 { animation: kb-zoom-in 12s ease-out forwards; }
+.gallery-photo.kb-2 { animation: kb-drift-left 12s ease-out forwards; }
+.gallery-photo.kb-3 { animation: kb-zoom-out 12s ease-out forwards; }
+.gallery-photo.kb-4 { animation: kb-drift-right 12s ease-out forwards; }
+
+@keyframes kb-zoom-in     { from { transform: scale(0.97); } to { transform: scale(1.04); } }
+@keyframes kb-zoom-out    { from { transform: scale(1.04); } to { transform: scale(0.97); } }
+@keyframes kb-drift-left  { from { transform: scale(1.01) translateX(1%); }  to { transform: scale(1.03) translateX(-1%); } }
+@keyframes kb-drift-right { from { transform: scale(1.01) translateX(-1%); } to { transform: scale(1.03) translateX(1%); } }
+
+/* Dark gradient at the bottom so the caption is readable */
+.gallery-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.35) 0%, transparent 18%, transparent 70%, rgba(2, 6, 23, 0.85) 100%);
+}
+
+.destination-chip {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 0.9rem;
+  animation: fade-in 0.6s ease;
+}
+
+.caption {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 20px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+
+.caption.hidden .caption-name,
+.caption.hidden .caption-text { opacity: 0; }
+
+.caption-name,
+.caption-text { transition: opacity 0.4s ease; }
+
+.caption-name {
+  font-family: "Playfair Display", serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.caption-text {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.caption-credit {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+/* One small bar per photo; the current one fills up over 5 seconds */
+.caption-dots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.caption-dots span {
+  position: relative;
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.caption-dots span.seen { background: rgba(255, 255, 255, 0.7); }
+
+.caption-dots span.active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: left;
+  animation: dot-fill var(--slide-ms, 5000ms) linear forwards;
+}
+
+@keyframes dot-fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* =========================
+   Result card (the travel plan)
+   ========================= */
+
+.result {
+  padding: clamp(22px, 4vw, 48px);
+  background: var(--glass-strong);
+  animation: fade-in 0.7s ease;
+  line-height: 1.7;
+  scroll-margin-top: 16px;
+}
+
+.result-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.download-button {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.download-button:hover { background: rgba(251, 191, 36, 0.25); }
+.download-button:disabled { opacity: 0.6; cursor: wait; }
+
+.result-body {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.result-body h1,
+.result-body h2,
+.result-body h3 {
+  font-family: "Playfair Display", serif;
+  line-height: 1.25;
+  margin: 1.6em 0 0.6em;
+}
+
+.result-body h1 { font-size: 2rem; }
+.result-body h2 {
+  font-size: 1.5rem;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.result-body h3 { font-size: 1.2rem; color: var(--accent); }
+.result-body > :first-child { margin-top: 0; }
+
+.result-body p,
+.result-body li { color: #e2e8f0; }
+
+.result-body ul,
+.result-body ol { padding-left: 1.4em; }
+.result-body li { margin: 0.3em 0; }
+
+.result-body strong { color: #fff; }
+.result-body a { color: var(--accent); }
+
+.result-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+.result-body blockquote {
+  margin: 1em 0;
+  padding: 0.6em 1em;
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0 10px 10px 0;
+}
+
+/* Tables scroll sideways on small screens instead of squashing */
+.result-body table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.92rem;
+}
+
+.result-body th,
+.result-body td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.result-body th {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.result-body tr:hover td { background: rgba(255, 255, 255, 0.03); }
+
+.result-meta {
+  max-width: 920px;
+  margin: 28px auto 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+/* =========================
+   PDF download (light, printer-friendly; only used while making the PDF)
+   ========================= */
+
+.pdf-doc {
+  width: 680px;                      /* = A4 page width minus margins */
+  background: #fff;
+  color: #1f2937;
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.pdf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+  border-bottom: 3px solid #f59e0b;
+}
+
+.pdf-brand {
+  font-family: "Playfair Display", serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.pdf-brand span { color: #d97706; }
+.pdf-tagline { margin-top: 4px; font-size: 11px; color: #64748b; }
+.pdf-meta { text-align: right; font-size: 11px; color: #475569; }
+.pdf-meta strong { display: block; font-size: 15px; color: #0f172a; }
+
+.pdf-request {
+  margin-bottom: 18px;
+  padding: 8px 12px;
+  border-left: 3px solid #f59e0b;
+  background: #fffbeb;
+  font-size: 12px;
+}
+
+.pdf-doc h1, .pdf-doc h2, .pdf-doc h3 {
+  font-family: "Playfair Display", serif;
+  color: #0f172a;
+  line-height: 1.3;
+  margin: 1.2em 0 0.5em;
+}
+
+.pdf-doc h1 { font-size: 22px; }
+.pdf-doc h2 { font-size: 18px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
+.pdf-doc h3 { font-size: 15px; color: #b45309; }
+.pdf-doc ul, .pdf-doc ol { padding-left: 1.3em; }
+.pdf-doc hr { border: none; border-top: 1px solid #e2e8f0; margin: 1.4em 0; }
+.pdf-doc a { color: #b45309; }
+
+.pdf-doc table { width: 100%; border-collapse: collapse; margin: 0.8em 0; font-size: 11.5px; }
+.pdf-doc th, .pdf-doc td { padding: 6px 8px; border: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+.pdf-doc th { background: #f1f5f9; }
+
+.pdf-disclaimer {
+  margin-top: 24px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 10.5px;
+  color: #64748b;
+}
+
+/* =========================
+   Tablets and phones: stack everything (search, photos, plan)
+   ========================= */
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+
+  .sidebar,
+  .gallery {
+    height: auto;
+    min-height: 0;
+  }
+
+  .gallery { aspect-ratio: 4 / 3; }
+
+  .tagline { display: none; }
+}
+
+@media (max-width: 520px) {
+  .gallery { aspect-ratio: 3 / 4; }   /* taller frame suits phone screens */
+  .sidebar { padding: 22px 18px; }
+  .sidebar h1 { font-size: 1.8rem; }
+  .caption-name { font-size: 1.15rem; }
+  .caption-text { display: none; }
+}
+
+/* People who turned off animations in their system settings */
+@media (prefers-reduced-motion: reduce) {
+  .gallery-photo { animation: none !important; }
+  .gallery-layer { transition-duration: 0.01s; }
+}
