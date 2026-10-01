@@ -33,6 +33,7 @@ from tools.mcp_tools import call_mcp_tool
 # The direct Python tools are kept as a backup, used only if an MCP server is unavailable
 from tools.tavily_tool import tavily_search, format_mcp_search_result
 from tools.flight_tool import search_flights
+from tools.weather_planner import build_weather_plan, far_future_note, is_far_future, weather_city
 
 
 # =========================
@@ -92,6 +93,7 @@ class TravelState(TypedDict):
     user_query: str
     flight_results: str
     hotel_results: str
+    weather_plan: str      # one labelled line per day (Outdoor / Mixed / Hot / Indoor)
     itinerary: str
     llm_calls: int
 
@@ -101,7 +103,7 @@ class TravelState(TypedDict):
 # =========================
 
 def flight_agent(state: TravelState):
-    print("[1/4] Flight agent: searching flights...")
+    print("[1/5] Flight agent: searching flights...")
 
     try:
         flight_data = call_mcp_tool("flights", "search_flights", {"query": state["user_query"]})
@@ -120,7 +122,7 @@ def flight_agent(state: TravelState):
 # =========================
 
 def hotel_agent(state: TravelState):
-    print("[2/4] Hotel agent: searching hotels...")
+    print("[2/5] Hotel agent: searching hotels...")
     query = f"Best hotels for {state['user_query']}"
 
     try:
@@ -144,11 +146,40 @@ def hotel_agent(state: TravelState):
 
 
 # =========================
+# Weather Agent  (tool: weather MCP server -> OpenWeather)
+# No LLM: fixed rules label each day Outdoor / Mixed / Hot / Indoor (tools/weather_planner.py)
+# =========================
+
+def weather_agent(state: TravelState):
+    print("[3/5] Weather agent: checking the forecast...")
+    query = state["user_query"]
+    city = weather_city(query)
+
+    if not city:
+        weather_plan = "No destination found, so no weather forecast."
+    elif is_far_future(query):
+        weather_plan = far_future_note(city)
+    else:
+        try:
+            forecast = call_mcp_tool("weather", "get_weather_forecast", {"city": city, "days": 5})
+        except Exception as e:
+            print(f"   [mcp] {e}. Using the weather server's function directly instead.")
+            from mcp_servers.weather_server import get_weather_forecast
+            forecast = get_weather_forecast(city, 5)
+        weather_plan = build_weather_plan(query, city, forecast)
+
+    return {
+        "weather_plan": weather_plan,
+        "messages": [AIMessage(content="Weather forecast checked.")],
+    }
+
+
+# =========================
 # Itinerary Agent  (LLM)
 # =========================
 
 def itinerary_agent(state: TravelState):
-    print("[3/4] Itinerary agent: planning the days...")
+    print("[4/5] Itinerary agent: planning the days...")
     prompt = f"""
 Create a complete travel itinerary.
 
@@ -161,6 +192,12 @@ Flight Results:
 Hotel Results:
 {shorten(state['hotel_results'], MAX_HOTEL_CHARS)}
 
+Weather Plan (from the weather agent):
+{state.get('weather_plan') or 'Not available.'}
+
+Use the weather plan: put outdoor sightseeing on Outdoor days, indoor places (museums,
+markets, cafés) on Indoor days, outdoor activities early and late on Hot days, and an
+indoor backup on Mixed days. Start each day with its weather label and temperature.
 Make the itinerary practical, budget-aware, and easy to follow.
 Keep it concise: a few bullet points per day and a short budget estimate.
 If the user's budget is in Indian Rupees (₹ / INR), give all costs in INR.
@@ -183,7 +220,7 @@ If the user's budget is in Indian Rupees (₹ / INR), give all costs in INR.
 # =========================
 
 def final_agent(state: TravelState):
-    print("[4/4] Final agent: writing the answer...")
+    print("[5/5] Final agent: writing the answer...")
     final_prompt = f"""
 Generate the final travel response for the user.
 
@@ -213,6 +250,7 @@ Important:
 - Mention that the live flight API shows flight status, not ticket prices.
 - Keep the response useful for real travel planning.
 - Clearly label all prices as rough estimates, not live quotes.
+- In the Day-by-Day Itinerary, keep each day's weather label and temperature from the itinerary.
 - Keep the whole response under 900 words.
 """
 
@@ -229,19 +267,21 @@ Important:
 
 # =========================
 # Build Graph
-# START -> flight -> hotel -> itinerary -> final -> END
+# START -> flight -> hotel -> weather -> itinerary -> final -> END
 # =========================
 
 graph = StateGraph(TravelState)
 
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
+graph.add_node("weather_agent", weather_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_agent)
 
 graph.add_edge(START, "flight_agent")
 graph.add_edge("flight_agent", "hotel_agent")
-graph.add_edge("hotel_agent", "itinerary_agent")
+graph.add_edge("hotel_agent", "weather_agent")
+graph.add_edge("weather_agent", "itinerary_agent")
 graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END)
 
@@ -290,6 +330,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
             "user_query": user_input,
             "flight_results": "",
             "hotel_results": "",
+            "weather_plan": "",
             "itinerary": "",
             "llm_calls": 0,
         },
@@ -301,6 +342,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
         "answer": result["messages"][-1].content,
         "flight_results": result.get("flight_results", ""),
         "hotel_results": result.get("hotel_results", ""),
+        "weather_plan": result.get("weather_plan", ""),
         "itinerary": result.get("itinerary", ""),
         "llm_calls": result.get("llm_calls", 0),
     }

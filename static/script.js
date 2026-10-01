@@ -5,8 +5,8 @@
 const TYPING_PAUSE_MS = 800;     // wait this long after typing stops before looking up the destination
 const SLIDE_EVERY_MS = 5000;     // change background photo every 5 seconds
 
-// The order the 4 agents run in (same as backend.py)
-const AGENTS = ["flight_agent", "hotel_agent", "itinerary_agent", "final_agent"];
+// The order the 5 agents run in (same as backend.py)
+const AGENTS = ["flight_agent", "hotel_agent", "weather_agent", "itinerary_agent", "final_agent"];
 
 // Four slow zoom/pan styles (see style.css), used in turn
 const KEN_BURNS = ["kb-1", "kb-2", "kb-3", "kb-4"];
@@ -229,7 +229,7 @@ function renderPlan(answer, llmCalls, message) {
     resultBody.style.whiteSpace = "pre-wrap";
   }
   resultMeta.textContent =
-    `Planned by 4 AI agents · ${llmCalls} LLM calls · Prices are rough estimates, not live quotes.`;
+    `Planned by 5 AI agents · ${llmCalls} LLM calls · Prices are rough estimates, not live quotes.`;
   downloadButton.hidden = !window.html2pdf;  // hide the button if the PDF library didn't load
   result.hidden = false;
   result.scrollIntoView({ behavior: "smooth", block: "start" });

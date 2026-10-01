@@ -58,6 +58,7 @@ def travel_stream(req: TravelRequest):
         "user_query": req.message,
         "flight_results": "",
         "hotel_results": "",
+        "weather_plan": "",
         "itinerary": "",
         "llm_calls": 0,
     }
