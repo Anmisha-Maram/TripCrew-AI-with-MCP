@@ -183,26 +183,59 @@ input.addEventListener("input", () => {
 // Progress steps
 // =========================================================
 
-// activeAgent: the agent working now, "all" when finished, or null to reset everything to "Waiting"
-function setProgress(activeAgent) {
-  const activeIndex = AGENTS.indexOf(activeAgent);
-  progress.querySelectorAll("li").forEach((li) => {
-    const index = AGENTS.indexOf(li.dataset.agent);
-    const done = activeAgent === "all" || (activeIndex >= 0 && index < activeIndex);
-    const active = index === activeIndex;
-    li.classList.toggle("done", done);
-    li.classList.toggle("active", active);
-    li.querySelector(".agent-status").textContent = done ? "Done" : active ? "Working…" : "Waiting";
+const supervisorReason = document.getElementById("supervisor-reason");
+const SUPERVISOR_HINT = supervisorReason.textContent;  // "Decides which agents to run"
+
+const STATUS_TEXT = {
+  waiting: "Waiting",
+  active: "Working…",
+  done: "Done",
+  skipped: "Skipped",
+  stopped: "Stopped",
+};
+
+// The agents the supervisor chose for this request, in order (always ending with final_agent)
+let runOrder = [];
+
+// Show one status on one agent's box
+function setStatus(agent, status) {
+  const li = progress.querySelector(`li[data-agent="${agent}"]`);
+  if (!li) return;
+  li.classList.remove("active", "done", "skipped");
+  if (["active", "done", "skipped"].includes(status)) li.classList.add(status);
+  li.querySelector(".agent-status").textContent = STATUS_TEXT[status];
+}
+
+// New request: everyone waits, the supervisor starts thinking
+function resetProgress() {
+  runOrder = [];
+  progress.querySelectorAll("li").forEach((li) => setStatus(li.dataset.agent, "waiting"));
+  supervisorReason.textContent = "Reading your request…";
+  setStatus("supervisor_agent", "active");
+}
+
+// The supervisor's plan arrived: show its reason, grey out skipped agents, start the first one
+function applyPlan(agents, reason) {
+  runOrder = [...agents, "final_agent"];
+  setStatus("supervisor_agent", "done");
+  supervisorReason.textContent = reason || SUPERVISOR_HINT;
+  AGENTS.forEach((agent) => {
+    if (!runOrder.includes(agent)) setStatus(agent, "skipped");
   });
+  setStatus(runOrder[0], "active");
+}
+
+// An agent finished: mark it done and start the next one in the plan
+function agentFinished(agent) {
+  setStatus(agent, "done");
+  const next = runOrder[runOrder.indexOf(agent) + 1];
+  if (next) setStatus(next, "active");
 }
 
 // When something goes wrong, the agent that was working shows "Stopped"
 function stopProgress() {
   const active = progress.querySelector("li.active");
-  if (active) {
-    active.classList.remove("active");
-    active.querySelector(".agent-status").textContent = "Stopped";
-  }
+  if (active) setStatus(active.dataset.agent, "stopped");
 }
 
 // =========================================================
@@ -228,8 +261,10 @@ function renderPlan(answer, llmCalls, message) {
     resultBody.textContent = answer;
     resultBody.style.whiteSpace = "pre-wrap";
   }
+  const agentCount = runOrder.length || AGENTS.length;
   resultMeta.textContent =
-    `Planned by 5 AI agents · ${llmCalls} LLM calls · Prices are rough estimates, not live quotes.`;
+    `Planned by the supervisor and ${agentCount} AI agent${agentCount === 1 ? "" : "s"} · ` +
+    `${llmCalls} LLM calls · Prices are rough estimates, not live quotes.`;
   downloadButton.hidden = !window.html2pdf;  // hide the button if the PDF library didn't load
   result.hidden = false;
   result.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -345,7 +380,7 @@ async function planTrip(message) {
   button.textContent = "Planning…";
   errorBox.hidden = true;
   result.hidden = true;
-  setProgress("flight_agent");
+  resetProgress();
 
   try {
     const response = await fetch("/api/travel-stream", {
@@ -373,11 +408,14 @@ async function planTrip(message) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
 
-        if (event.type === "step") {
-          // This agent finished, so the next one is now working
-          setProgress(AGENTS[AGENTS.indexOf(event.agent) + 1]);
+        if (event.type === "plan") {
+          // The supervisor decided which agents to run
+          applyPlan(event.agents, event.reason);
+        } else if (event.type === "step") {
+          // This agent finished, so the next one in the plan is now working
+          agentFinished(event.agent);
         } else if (event.type === "done") {
-          setProgress("all");
+          agentFinished("final_agent");
           renderPlan(event.answer, event.llm_calls, message);
           finished = true;
         } else if (event.type === "error") {

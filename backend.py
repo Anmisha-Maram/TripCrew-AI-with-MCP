@@ -34,6 +34,7 @@ from tools.mcp_tools import call_mcp_tool
 from tools.tavily_tool import tavily_search, format_mcp_search_result
 from tools.flight_tool import search_flights
 from tools.weather_planner import build_weather_plan, far_future_note, is_far_future, weather_city
+from supervisor import AGENT_ORDER, decide_plan
 
 
 # =========================
@@ -96,6 +97,14 @@ class TravelState(TypedDict):
     weather_plan: str      # one labelled line per day (Outdoor / Mixed / Hot / Indoor)
     itinerary: str
     llm_calls: int
+    plan: list[str]        # agents the supervisor chose, in order (final_agent always runs last)
+    plan_reason: str       # the supervisor's one-sentence explanation
+    completed: list[str]   # agents that have finished so far
+
+
+def mark_done(state: TravelState, agent: str) -> list[str]:
+    """Each agent adds its name here, so the supervisor knows who is next."""
+    return state.get("completed", []) + [agent]
 
 
 # =========================
@@ -103,7 +112,7 @@ class TravelState(TypedDict):
 # =========================
 
 def flight_agent(state: TravelState):
-    print("[1/5] Flight agent: searching flights...")
+    print("-> Flight agent: searching flights...")
 
     try:
         flight_data = call_mcp_tool("flights", "search_flights", {"query": state["user_query"]})
@@ -114,6 +123,7 @@ def flight_agent(state: TravelState):
     return {
         "flight_results": flight_data,
         "messages": [AIMessage(content="Flight results fetched.")],
+        "completed": mark_done(state, "flight_agent"),
     }
 
 
@@ -122,7 +132,7 @@ def flight_agent(state: TravelState):
 # =========================
 
 def hotel_agent(state: TravelState):
-    print("[2/5] Hotel agent: searching hotels...")
+    print("-> Hotel agent: searching hotels...")
     query = f"Best hotels for {state['user_query']}"
 
     try:
@@ -142,6 +152,7 @@ def hotel_agent(state: TravelState):
     return {
         "hotel_results": hotel_results,
         "messages": [AIMessage(content="Hotel information fetched.")],
+        "completed": mark_done(state, "hotel_agent"),
     }
 
 
@@ -151,7 +162,7 @@ def hotel_agent(state: TravelState):
 # =========================
 
 def weather_agent(state: TravelState):
-    print("[3/5] Weather agent: checking the forecast...")
+    print("-> Weather agent: checking the forecast...")
     query = state["user_query"]
     city = weather_city(query)
 
@@ -171,6 +182,7 @@ def weather_agent(state: TravelState):
     return {
         "weather_plan": weather_plan,
         "messages": [AIMessage(content="Weather forecast checked.")],
+        "completed": mark_done(state, "weather_agent"),
     }
 
 
@@ -179,7 +191,7 @@ def weather_agent(state: TravelState):
 # =========================
 
 def itinerary_agent(state: TravelState):
-    print("[4/5] Itinerary agent: planning the days...")
+    print("-> Itinerary agent: planning the days...")
     prompt = f"""
 Create a complete travel itinerary.
 
@@ -187,13 +199,13 @@ User Query:
 {state['user_query']}
 
 Flight Results:
-{shorten(state['flight_results'], MAX_FLIGHT_CHARS)}
+{shorten(state.get('flight_results') or 'Not requested.', MAX_FLIGHT_CHARS)}
 
 Hotel Results:
-{shorten(state['hotel_results'], MAX_HOTEL_CHARS)}
+{shorten(state.get('hotel_results') or 'Not requested.', MAX_HOTEL_CHARS)}
 
 Weather Plan (from the weather agent):
-{state.get('weather_plan') or 'Not available.'}
+{state.get('weather_plan') or 'Not requested.'}
 
 Use the weather plan: put outdoor sightseeing on Outdoor days, indoor places (museums,
 markets, cafés) on Indoor days, outdoor activities early and late on Hot days, and an
@@ -212,6 +224,7 @@ If the user's budget is in Indian Rupees (₹ / INR), give all costs in INR.
         "itinerary": response.content,
         "messages": [response],
         "llm_calls": state.get("llm_calls", 0) + 1,
+        "completed": mark_done(state, "itinerary_agent"),
     }
 
 
@@ -220,39 +233,47 @@ If the user's budget is in Indian Rupees (₹ / INR), give all costs in INR.
 # =========================
 
 def final_agent(state: TravelState):
-    print("[5/5] Final agent: writing the answer...")
-    final_prompt = f"""
-Generate the final travel response for the user.
+    print("-> Final agent: writing the answer...")
+    ran = set(state.get("completed", []))
 
-User Request:
-{state['user_query']}
+    # Only send the data the supervisor's agents actually collected (fewer tokens),
+    # and only ask for the sections that data can fill
+    data_blocks, sections = [], ["Summary"]
+    if "flight_agent" in ran:
+        data_blocks.append(f"Flights:\n{shorten(state['flight_results'], MAX_FLIGHT_CHARS)}")
+        sections.append("Flight Information")
+    if "hotel_agent" in ran:
+        data_blocks.append(f"Hotels:\n{shorten(state['hotel_results'], MAX_HOTEL_CHARS)}")
+        sections.append("Hotel Suggestions")
+    if "itinerary_agent" in ran:
+        # The itinerary already contains the weather labels for each day
+        data_blocks.append(f"Itinerary (written by the itinerary agent):\n{shorten(state['itinerary'], MAX_ITINERARY_CHARS)}")
+        sections += ["Day-by-Day Itinerary", "Estimated Budget"]
+    elif "weather_agent" in ran:
+        data_blocks.append(f"Weather plan:\n{state['weather_plan']}")
+        sections.append("Weather Forecast and What It Means for Your Plans")
+    sections.append("Final Recommendations")
 
-Flights:
-{shorten(state['flight_results'], MAX_FLIGHT_CHARS)}
+    full_trip = "itinerary_agent" in ran
+    rules = [
+        "Be clear and practical, and only answer what the user asked for.",
+        "Clearly label all prices as rough estimates, not live quotes.",
+        f"Keep the whole response under {900 if full_trip else 400} words.",
+    ]
+    if "flight_agent" in ran:
+        rules.append("Mention that the live flight API shows flight status, not ticket prices.")
+    if full_trip:
+        rules.append("In the Day-by-Day Itinerary, keep each day's weather label and temperature from the itinerary.")
 
-Hotels:
-{shorten(state['hotel_results'], MAX_HOTEL_CHARS)}
-
-Itinerary (written by the itinerary agent):
-{shorten(state['itinerary'], MAX_ITINERARY_CHARS)}
-
-Format the final answer beautifully using these sections:
-
-1. Trip Summary
-2. Flight Information
-3. Hotel Suggestions
-4. Day-by-Day Itinerary
-5. Estimated Budget
-6. Final Recommendations
-
-Important:
-- Be clear and practical.
-- Mention that the live flight API shows flight status, not ticket prices.
-- Keep the response useful for real travel planning.
-- Clearly label all prices as rough estimates, not live quotes.
-- In the Day-by-Day Itinerary, keep each day's weather label and temperature from the itinerary.
-- Keep the whole response under 900 words.
-"""
+    final_prompt = (
+        "Generate the final travel response for the user.\n\n"
+        f"User Request:\n{state['user_query']}\n\n"
+        + "\n\n".join(data_blocks)
+        + "\n\nFormat the answer beautifully using these sections:\n"
+        + "\n".join(f"{i}. {name}" for i, name in enumerate(sections, start=1))
+        + "\n\nImportant:\n"
+        + "\n".join(f"- {rule}" for rule in rules)
+    )
 
     response = call_llm([
         SystemMessage(content="You are a professional AI travel booking assistant."),
@@ -266,23 +287,56 @@ Important:
 
 
 # =========================
+# Supervisor Agent  (small LLM, once per request - see supervisor.py)
+# Runs first, and again after every agent, to decide who goes next.
+# =========================
+
+def supervisor_agent(state: TravelState):
+    if state.get("plan"):
+        return {}  # plan already made: route_next() just picks the next agent (no LLM call)
+
+    print("-> Supervisor: choosing which agents to run...")
+    decision = decide_plan(state["user_query"])
+    names = ", ".join(a.replace("_agent", "") for a in decision["agents"])
+    print(f"   Plan: {names} -> final  ({decision['method']}: {decision['reason']})")
+
+    return {
+        "plan": decision["agents"],
+        "plan_reason": decision["reason"],
+        "completed": [],
+    }
+
+
+def route_next(state: TravelState) -> str:
+    """The first agent in the plan that hasn't finished yet. When all are done: the final agent."""
+    for agent in state.get("plan", []):
+        if agent not in state.get("completed", []):
+            return agent
+    return "final_agent"
+
+
+# =========================
 # Build Graph
-# START -> flight -> hotel -> weather -> itinerary -> final -> END
+#
+#              ┌──────────── supervisor ◄───────────┐
+#   START ───► │  decides who runs next              │
+#              └──► flight / hotel / weather / itinerary ──┘   (each reports back)
+#                   ...and when the plan is done ──► final ──► END
 # =========================
 
 graph = StateGraph(TravelState)
 
+graph.add_node("supervisor_agent", supervisor_agent)
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
 graph.add_node("weather_agent", weather_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_agent)
 
-graph.add_edge(START, "flight_agent")
-graph.add_edge("flight_agent", "hotel_agent")
-graph.add_edge("hotel_agent", "weather_agent")
-graph.add_edge("weather_agent", "itinerary_agent")
-graph.add_edge("itinerary_agent", "final_agent")
+graph.add_edge(START, "supervisor_agent")
+graph.add_conditional_edges("supervisor_agent", route_next, AGENT_ORDER + ["final_agent"])
+for agent in AGENT_ORDER:
+    graph.add_edge(agent, "supervisor_agent")  # every agent reports back to the supervisor
 graph.add_edge("final_agent", END)
 
 
@@ -333,6 +387,9 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
             "weather_plan": "",
             "itinerary": "",
             "llm_calls": 0,
+            "plan": [],          # empty = the supervisor makes a new plan for this request
+            "plan_reason": "",
+            "completed": [],
         },
         config=config,
     )
@@ -345,4 +402,6 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
         "weather_plan": result.get("weather_plan", ""),
         "itinerary": result.get("itinerary", ""),
         "llm_calls": result.get("llm_calls", 0),
+        "plan": result.get("plan", []),
+        "plan_reason": result.get("plan_reason", ""),
     }

@@ -44,8 +44,9 @@ def travel(req: TravelRequest):
 
 # =========================
 # Travel plan with live progress (used by the web page)
-# Runs the same graph, but sends one line of JSON each time an agent finishes:
-#   {"type": "step", "agent": "hotel_agent"}
+# Runs the same graph, but sends one line of JSON for each event:
+#   {"type": "plan", "agents": ["hotel_agent", ...], "reason": "..."}   (from the supervisor)
+#   {"type": "step", "agent": "hotel_agent"}                            (an agent finished)
 #   {"type": "done", "answer": "...", "llm_calls": 2, "thread_id": "..."}
 # =========================
 
@@ -61,6 +62,9 @@ def travel_stream(req: TravelRequest):
         "weather_plan": "",
         "itinerary": "",
         "llm_calls": 0,
+        "plan": [],          # empty = the supervisor makes a new plan for this request
+        "plan_reason": "",
+        "completed": [],
     }
 
     def events():
@@ -68,7 +72,15 @@ def travel_stream(req: TravelRequest):
             # stream_mode="updates" gives us {agent_name: what_it_returned} after each agent
             for update in travel_graph.stream(start_state, config=config, stream_mode="updates"):
                 for agent, output in update.items():
-                    if agent == "final_agent":
+                    if agent == "supervisor_agent":
+                        # The supervisor runs between every agent; only its first run has news (the plan)
+                        if output and output.get("plan"):
+                            yield json.dumps({
+                                "type": "plan",
+                                "agents": output["plan"],
+                                "reason": output.get("plan_reason", ""),
+                            }) + "\n"
+                    elif agent == "final_agent":
                         yield json.dumps({
                             "type": "done",
                             "answer": output["messages"][-1].content,

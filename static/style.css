@@ -160,23 +160,23 @@ body {
 .trip-form button:disabled { opacity: 0.6; cursor: wait; transform: none; }
 
 /* =========================
-   Sidebar: the 4 agent boxes
+   Sidebar: the supervisor + agent boxes
    ========================= */
 
 .agents {
   list-style: none;
-  margin: 24px 0 0;
+  margin: 20px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .agents li {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-radius: 14px;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.05);
@@ -234,6 +234,30 @@ body {
 /* Done: green tick */
 .agents li.done .agent-status { color: var(--green); }
 .agents li.done .agent-status::before { content: "✓"; font-weight: 700; }
+
+/* Skipped: the supervisor decided this agent isn't needed */
+.agents li.skipped { opacity: 0.45; }
+.agents li.skipped .agent-text strong { text-decoration: line-through; text-decoration-color: rgba(148, 163, 184, 0.6); }
+
+/* The supervisor is the "manager": its own colour, a line under it, and room for its reason */
+.agents li.supervisor {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.25);
+  margin-bottom: 6px;
+}
+
+.agents li.supervisor .agent-icon { background: rgba(56, 189, 248, 0.15); }
+
+.agents li.supervisor small {
+  color: #bae6fd;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.agents li.supervisor.active {
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(56, 189, 248, 0.6);
+}
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
