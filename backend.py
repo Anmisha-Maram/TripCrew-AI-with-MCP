@@ -28,7 +28,10 @@ from langchain_core.messages import (
 from langchain_groq import ChatGroq
 from groq import RateLimitError
 
-from tools.tavily_tool import tavily_search
+from tools.mcp_tools import call_mcp_tool
+
+# The direct Python tools are kept as a backup, used only if an MCP server is unavailable
+from tools.tavily_tool import tavily_search, format_mcp_search_result
 from tools.flight_tool import search_flights
 
 
@@ -94,12 +97,17 @@ class TravelState(TypedDict):
 
 
 # =========================
-# Flight Agent  (tool: AviationStack)
+# Flight Agent  (tool: flight MCP server -> AviationStack)
 # =========================
 
 def flight_agent(state: TravelState):
     print("[1/4] Flight agent: searching flights...")
-    flight_data = search_flights(state["user_query"])
+
+    try:
+        flight_data = call_mcp_tool("flights", "search_flights", {"query": state["user_query"]})
+    except Exception as e:
+        print(f"   [mcp] {e}. Using the direct flight tool instead.")
+        flight_data = search_flights(state["user_query"])
 
     return {
         "flight_results": flight_data,
@@ -108,7 +116,7 @@ def flight_agent(state: TravelState):
 
 
 # =========================
-# Hotel Agent  (tool: Tavily web search)
+# Hotel Agent  (tool: Tavily's hosted MCP server)
 # =========================
 
 def hotel_agent(state: TravelState):
@@ -116,9 +124,18 @@ def hotel_agent(state: TravelState):
     query = f"Best hotels for {state['user_query']}"
 
     try:
-        hotel_results = tavily_search(query)
+        raw = call_mcp_tool(
+            "tavily",
+            ["tavily_search", "tavily-search"],  # Tavily has used both names
+            {"query": query, "max_results": 5, "search_depth": "basic"},  # basic = 1 credit
+        )
+        hotel_results = format_mcp_search_result(raw)  # raw JSON -> short text (fewer tokens)
     except Exception as e:
-        hotel_results = f"Hotel search failed: {e}"
+        print(f"   [mcp] {e}. Using the direct Tavily tool instead.")
+        try:
+            hotel_results = tavily_search(query)
+        except Exception as e:
+            hotel_results = f"Hotel search failed: {e}"
 
     return {
         "hotel_results": hotel_results,

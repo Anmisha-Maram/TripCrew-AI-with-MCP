@@ -37,8 +37,8 @@ User request
 
 | Agent | What it does | Tool |
 |---|---|---|
-| **Flight agent** | Works out the route from your text and fetches live flights | AviationStack API |
-| **Hotel agent** | Searches the web for hotels at the destination | Tavily |
+| **Flight agent** | Works out the route from your text and fetches live flights | Flight MCP server → AviationStack API |
+| **Hotel agent** | Searches the web for hotels at the destination | Tavily's hosted MCP server |
 | **Itinerary agent** | Writes a budget-aware, day-by-day plan | Groq (`openai/gpt-oss-120b`) |
 | **Final agent** | Turns everything into a polished plan: summary, flights, hotels, itinerary, budget and tips | Groq (`openai/gpt-oss-120b`) |
 
@@ -68,10 +68,13 @@ TripCrew-AI/
 ├── tools/
 │   ├── flight_tool.py      # AviationStack + text → airport-code route parsing
 │   ├── tavily_tool.py      # Hotel / web search
-│   └── destination_tool.py # Attractions + Wikipedia photos for the gallery
+│   ├── destination_tool.py # Attractions + Wikipedia photos for the gallery
+│   └── mcp_tools.py        # Connects to all MCP servers (MultiServerMCPClient)
 ├── mcp_servers/
 │   ├── weather_server.py       # Weather MCP server (OpenWeather 5-day forecast)
-│   └── test_weather_server.py  # Tests the server as a real MCP client
+│   ├── flight_server.py        # Flight MCP server (wraps tools/flight_tool.py)
+│   ├── test_weather_server.py  # Tests the weather server as a real MCP client
+│   └── test_mcp_tools.py       # Tests all 3 MCP servers together
 ├── templates/
 │   └── index.html          # Web page
 └── static/
@@ -171,13 +174,15 @@ Open **<http://127.0.0.1:8000>** in your browser and try:
 python test.py
 ```
 
-### 8. (Optional) Test the weather MCP server
+### 8. (Optional) Test the MCP servers
 
 ```bash
+# Weather server on its own: lists its tools and asks for forecasts for a few cities
 python mcp_servers/test_weather_server.py
-```
 
-This starts the server, lists its tools and asks for forecasts for a few cities.
+# All 3 servers (weather, flights, Tavily) through MultiServerMCPClient, one call each
+python mcp_servers/test_mcp_tools.py
+```
 
 ---
 
@@ -200,11 +205,12 @@ This starts the server, lists its tools and asks for forecasts for a few cities.
 ## 🗺️ Phase 2 progress
 
 - [x] **Step 1: Weather MCP server.** A custom OpenWeather server (`mcp_servers/weather_server.py`), standalone and tested
-- [ ] **Step 2: Tools on MCP.** Weather MCP, a flight MCP server wrapping the AviationStack tool, and Tavily's hosted MCP, connected to LangGraph with `langchain-mcp-adapters` (`MultiServerMCPClient`)
+- [x] **Step 2: Tools on MCP.** Weather MCP, a flight MCP server wrapping the AviationStack tool, and Tavily's hosted MCP, connected to LangGraph with `langchain-mcp-adapters` (`MultiServerMCPClient`), with automatic fallback to the direct tools if a server is unavailable
 - [ ] **Step 3: Weather agent.** Indoor vs outdoor suggestions for each day, based on the forecast
-- [ ] **Step 4: Input guardrails.** Block off-topic, unsafe and prompt-injection requests before any tools run
-- [ ] **Step 5: PII filter.** Mask emails, phone numbers, passport, Aadhaar, PAN and card numbers before they reach the LLM, logs or database
-- [ ] **Step 6: Human-in-the-loop.** Pause after the draft itinerary with LangGraph `interrupt()`, approve or request changes in the UI, and download only approved plans as PDF
+- [ ] **Step 4: Supervisor agent.** Reads the request and decides which agents run and in what order (e.g. hotels only, weather only, or the full trip)
+- [ ] **Step 5: Input guardrails.** Block off-topic, unsafe and prompt-injection requests before any tools run
+- [ ] **Step 6: PII filter.** Mask emails, phone numbers, passport, Aadhaar, PAN and card numbers before they reach the LLM, logs or database
+- [ ] **Step 7: Human-in-the-loop.** Pause after the draft itinerary with LangGraph `interrupt()`, approve or request changes in the UI, and download only approved plans as PDF
 - [ ] Deploy online
 
 ## 🙏 Acknowledgements
