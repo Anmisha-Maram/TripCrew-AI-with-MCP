@@ -45,6 +45,8 @@ def travel(req: TravelRequest):
 # =========================
 # Travel plan with live progress (used by the web page)
 # Runs the same graph, but sends one line of JSON for each event:
+#   {"type": "step", "agent": "guardrail_agent"}                        (request allowed)
+#   {"type": "blocked", "category": "off_topic", "message": "..."}      (request stopped - the end)
 #   {"type": "plan", "agents": ["hotel_agent", ...], "reason": "..."}   (from the supervisor)
 #   {"type": "step", "agent": "hotel_agent"}                            (an agent finished)
 #   {"type": "done", "answer": "...", "llm_calls": 2, "thread_id": "..."}
@@ -65,6 +67,8 @@ def travel_stream(req: TravelRequest):
         "plan": [],          # empty = the supervisor makes a new plan for this request
         "plan_reason": "",
         "completed": [],
+        "blocked": False,
+        "block_reason": "",
     }
 
     def events():
@@ -72,7 +76,16 @@ def travel_stream(req: TravelRequest):
             # stream_mode="updates" gives us {agent_name: what_it_returned} after each agent
             for update in travel_graph.stream(start_state, config=config, stream_mode="updates"):
                 for agent, output in update.items():
-                    if agent == "supervisor_agent":
+                    if agent == "guardrail_agent":
+                        if output and output.get("blocked"):
+                            yield json.dumps({
+                                "type": "blocked",
+                                "category": output["block_reason"],
+                                "message": output["messages"][-1].content,
+                            }) + "\n"
+                        else:
+                            yield json.dumps({"type": "step", "agent": agent}) + "\n"
+                    elif agent == "supervisor_agent":
                         # The supervisor runs between every agent; only its first run has news (the plan)
                         if output and output.get("plan"):
                             yield json.dumps({

@@ -185,6 +185,8 @@ input.addEventListener("input", () => {
 
 const supervisorReason = document.getElementById("supervisor-reason");
 const SUPERVISOR_HINT = supervisorReason.textContent;  // "Decides which agents to run"
+const guardrailReason = document.getElementById("guardrail-reason");
+const GUARDRAIL_HINT = guardrailReason.textContent;    // "Checks every request is safe"
 
 const STATUS_TEXT = {
   waiting: "Waiting",
@@ -192,6 +194,17 @@ const STATUS_TEXT = {
   done: "Done",
   skipped: "Skipped",
   stopped: "Stopped",
+  blocked: "Blocked",
+};
+
+// Shown under the guardrail box when it stops a request
+const BLOCK_LABELS = {
+  greeting: "Just a greeting, so no trip to plan yet",
+  empty: "Empty request",
+  too_long: "Request too long",
+  off_topic: "Not a travel request",
+  unsafe: "Unsafe request",
+  injection: "Looks like a prompt-injection attempt",
 };
 
 // The agents the supervisor chose for this request, in order (always ending with final_agent)
@@ -201,17 +214,35 @@ let runOrder = [];
 function setStatus(agent, status) {
   const li = progress.querySelector(`li[data-agent="${agent}"]`);
   if (!li) return;
-  li.classList.remove("active", "done", "skipped");
-  if (["active", "done", "skipped"].includes(status)) li.classList.add(status);
+  li.classList.remove("active", "done", "skipped", "blocked");
+  if (["active", "done", "skipped", "blocked"].includes(status)) li.classList.add(status);
   li.querySelector(".agent-status").textContent = STATUS_TEXT[status];
 }
 
-// New request: everyone waits, the supervisor starts thinking
+// New request: everyone waits, the guardrail checks it first
 function resetProgress() {
   runOrder = [];
   progress.querySelectorAll("li").forEach((li) => setStatus(li.dataset.agent, "waiting"));
+  guardrailReason.textContent = GUARDRAIL_HINT;
+  supervisorReason.textContent = SUPERVISOR_HINT;
+  setStatus("guardrail_agent", "active");
+}
+
+// The guardrail allowed the request: now the supervisor reads it
+function guardrailPassed() {
+  setStatus("guardrail_agent", "done");
+  guardrailReason.textContent = "Request looks safe";
   supervisorReason.textContent = "Reading your request…";
   setStatus("supervisor_agent", "active");
+}
+
+// The guardrail stopped the request: nobody else runs
+function guardrailBlocked(category) {
+  setStatus("guardrail_agent", category === "greeting" ? "done" : "blocked");
+  guardrailReason.textContent = BLOCK_LABELS[category] || "Request stopped";
+  progress.querySelectorAll("li").forEach((li) => {
+    if (li.dataset.agent !== "guardrail_agent") setStatus(li.dataset.agent, "skipped");
+  });
 }
 
 // The supervisor's plan arrived: show its reason, grey out skipped agents, start the first one
@@ -250,8 +281,25 @@ function planToHtml(answer) {
   return null;  // libraries didn't load (e.g. offline)
 }
 
+// A message from the guardrail instead of a plan (nothing to download)
+function renderNotice(text, category) {
+  lastPlan = null;
+  const html = planToHtml(text);
+  if (html !== null) resultBody.innerHTML = html;
+  else resultBody.textContent = text;
+  result.classList.add("notice");
+  result.classList.toggle("notice-blocked", category !== "greeting");
+  resultMeta.textContent = category === "greeting"
+    ? ""
+    : "Stopped by the guardrail before the supervisor or any tool ran.";
+  downloadButton.hidden = true;
+  result.hidden = false;
+  result.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function renderPlan(answer, llmCalls, message) {
   lastPlan = { answer, message, destination: currentDestination || null };
+  result.classList.remove("notice", "notice-blocked");
 
   const html = planToHtml(answer);
   if (html !== null) {
@@ -408,7 +456,13 @@ async function planTrip(message) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
 
-        if (event.type === "plan") {
+        if (event.type === "step" && event.agent === "guardrail_agent") {
+          guardrailPassed();
+        } else if (event.type === "blocked") {
+          guardrailBlocked(event.category);
+          renderNotice(event.message, event.category);
+          finished = true;
+        } else if (event.type === "plan") {
           // The supervisor decided which agents to run
           applyPlan(event.agents, event.reason);
         } else if (event.type === "step") {

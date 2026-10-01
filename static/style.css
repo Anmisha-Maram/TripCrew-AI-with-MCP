@@ -259,6 +259,39 @@ body {
   border-color: rgba(56, 189, 248, 0.6);
 }
 
+/* The guardrail checks every request first: violet */
+.agents li.guardrail {
+  background: rgba(167, 139, 250, 0.08);
+  border-color: rgba(167, 139, 250, 0.25);
+}
+
+.agents li.guardrail .agent-icon { background: rgba(167, 139, 250, 0.15); }
+
+.agents li.guardrail small {
+  color: #ddd6fe;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.agents li.guardrail.active {
+  background: rgba(167, 139, 250, 0.14);
+  border-color: rgba(167, 139, 250, 0.6);
+}
+
+/* Blocked: the guardrail stopped the request */
+.agents li.blocked {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.55);
+}
+
+.agents li.blocked .agent-status { color: #fca5a5; }
+.agents li.blocked .agent-status::before { content: "✕"; font-weight: 700; }
+.agents li.blocked small { color: #fecaca; }
+
+/* The result card when it shows a guardrail message instead of a plan */
+.result.notice .result-body { font-size: 1.05rem; }
+.result.notice-blocked { border-color: rgba(248, 113, 113, 0.45); }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .error {

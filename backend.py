@@ -35,6 +35,7 @@ from tools.tavily_tool import tavily_search, format_mcp_search_result
 from tools.flight_tool import search_flights
 from tools.weather_planner import build_weather_plan, far_future_note, is_far_future, weather_city
 from supervisor import AGENT_ORDER, decide_plan
+from guardrails import check_request
 
 
 # =========================
@@ -100,6 +101,8 @@ class TravelState(TypedDict):
     plan: list[str]        # agents the supervisor chose, in order (final_agent always runs last)
     plan_reason: str       # the supervisor's one-sentence explanation
     completed: list[str]   # agents that have finished so far
+    blocked: bool          # True if the guardrail stopped this request
+    block_reason: str      # greeting / off_topic / unsafe / injection / empty / too_long
 
 
 def mark_done(state: TravelState, agent: str) -> list[str]:
@@ -287,6 +290,30 @@ def final_agent(state: TravelState):
 
 
 # =========================
+# Guardrail Agent  (runs FIRST - see guardrails.py)
+# Stops off-topic, unsafe and prompt-injection requests before the supervisor or any tool runs.
+# =========================
+
+def guardrail_agent(state: TravelState):
+    print("-> Guardrail: checking the request...")
+    check = check_request(state["user_query"])
+
+    if check["allowed"]:
+        return {"blocked": False, "block_reason": ""}
+
+    # Blocked: the friendly message becomes the answer, and the graph ends here
+    return {
+        "blocked": True,
+        "block_reason": check["category"],
+        "messages": [AIMessage(content=check["message"])],
+    }
+
+
+def route_after_guardrail(state: TravelState) -> str:
+    return END if state.get("blocked") else "supervisor_agent"
+
+
+# =========================
 # Supervisor Agent  (small LLM, once per request - see supervisor.py)
 # Runs first, and again after every agent, to decide who goes next.
 # =========================
@@ -318,14 +345,19 @@ def route_next(state: TravelState) -> str:
 # =========================
 # Build Graph
 #
+#   START ──► guardrail ──blocked──► END   (friendly message, no tools run)
+#                 │
+#              allowed
+#                 ▼
 #              ┌──────────── supervisor ◄───────────┐
-#   START ───► │  decides who runs next              │
+#              │  decides who runs next              │
 #              └──► flight / hotel / weather / itinerary ──┘   (each reports back)
 #                   ...and when the plan is done ──► final ──► END
 # =========================
 
 graph = StateGraph(TravelState)
 
+graph.add_node("guardrail_agent", guardrail_agent)
 graph.add_node("supervisor_agent", supervisor_agent)
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
@@ -333,7 +365,8 @@ graph.add_node("weather_agent", weather_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_agent)
 
-graph.add_edge(START, "supervisor_agent")
+graph.add_edge(START, "guardrail_agent")
+graph.add_conditional_edges("guardrail_agent", route_after_guardrail, ["supervisor_agent", END])
 graph.add_conditional_edges("supervisor_agent", route_next, AGENT_ORDER + ["final_agent"])
 for agent in AGENT_ORDER:
     graph.add_edge(agent, "supervisor_agent")  # every agent reports back to the supervisor
@@ -390,6 +423,8 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
             "plan": [],          # empty = the supervisor makes a new plan for this request
             "plan_reason": "",
             "completed": [],
+            "blocked": False,
+            "block_reason": "",
         },
         config=config,
     )
@@ -404,4 +439,6 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
         "llm_calls": result.get("llm_calls", 0),
         "plan": result.get("plan", []),
         "plan_reason": result.get("plan_reason", ""),
+        "blocked": result.get("blocked", False),
+        "block_reason": result.get("block_reason", ""),
     }

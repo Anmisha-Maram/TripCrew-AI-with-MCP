@@ -38,6 +38,11 @@
 
       <!-- One box per agent; script.js updates the status text -->
       <ol class="agents" id="progress">
+        <li data-agent="guardrail_agent" class="guardrail">
+          <span class="agent-icon">🛡️</span>
+          <span class="agent-text"><strong>Guardrail</strong><small id="guardrail-reason">Checks every request is safe</small></span>
+          <span class="agent-status">Waiting</span>
+        </li>
         <li data-agent="supervisor_agent" class="supervisor">
           <span class="agent-icon">🧭</span>
           <span class="agent-text"><strong>Supervisor</strong><small id="supervisor-reason">Decides which agents to run</small></span>
