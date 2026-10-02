@@ -13,8 +13,8 @@ import operator
 import time
 import uuid
 
-import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -392,8 +392,18 @@ def get_checkpointer():
         separator = "&" if "?" in database_url else "?"
         database_url = f"{database_url}{separator}sslmode=require"
 
-    conn = psycopg.connect(database_url, autocommit=True, row_factory=dict_row)
-    saver = PostgresSaver(conn)
+    # A pool instead of one connection: cloud databases close idle connections,
+    # so the pool tests each one before use and replaces it if it was closed.
+    pool = ConnectionPool(
+        conninfo=database_url,
+        min_size=1,
+        max_size=5,
+        max_idle=300,                          # close connections idle for 5 minutes ourselves
+        check=ConnectionPool.check_connection,  # test a connection before handing it out
+        kwargs={"autocommit": True, "row_factory": dict_row, "application_name": "tripcrew"},
+        open=True,
+    )
+    saver = PostgresSaver(pool)
     saver.setup()  # creates the checkpoint tables the first time
     print("OK: Connected to PostgreSQL.")
     return saver
