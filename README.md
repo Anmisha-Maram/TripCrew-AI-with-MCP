@@ -4,10 +4,7 @@
 
 🌐 **Live demo: <https://tripcrew-ai-with-mcp.onrender.com>** (hosted on Render's free plan, so the first visit may take up to a minute to wake up)
 
-Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to Delhi"*. A **supervisor agent** decides which agents your request needs, and a crew of AI agents finds live flights, searches hotels, checks the weather, plans each day and writes a complete travel plan. Before anything runs, a **privacy filter** hides your personal data and a **guardrail** stops unsafe requests. At the end, **you review the plan**: approve it, or ask for changes. While the agents work, the page shows photos of the destination's top attractions.
-
-> ✅ **Phase 2 complete.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moved the tools to **MCP servers**, added a **weather agent**, a **supervisor agent**, **guardrails**, a **PII filter** and **human-in-the-loop** approval, and deployed the app on **Render**. See **Phase 2 progress** below.
-
+Describe your trip in plain English, like *"plan a 5 day trip from NewYork to Delhi"*. A **supervisor agent** decides which agents your request needs, and a crew of AI agents finds live flights, searches hotels, checks the weather, plans each day and writes a complete travel plan. Before anything runs, a **privacy filter** hides your personal data and a **guardrail** stops unsafe requests. At the end, **you review the plan**: approve it, or ask for changes. While the agents work, the page shows photos of the destination's top attractions.
 ---
 
 ## 🌐 Try it online
