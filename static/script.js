@@ -415,7 +415,9 @@ async function downloadPdf() {
     margin: [14, 14, 18, 14],                        // mm: top, left, bottom, right
     filename: `TripCrew-AI-${name}-plan.pdf`,
     image: { type: "jpeg", quality: 0.95 },
-    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+    // scrollX/scrollY 0: without them, the PDF is shifted by however far the page is scrolled
+    // (blank space at the top, the end of the plan and the right edge cut off)
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0 },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     // Don't cut these in half at the bottom of a page
     pagebreak: { mode: ["css", "legacy"], avoid: ["tr", "li", "h2", "h3", "blockquote", ".pdf-header"] },
