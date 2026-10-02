@@ -1,0 +1,25 @@
+# Render Blueprint: describes the web service so Render can create it from this repo.
+# Keys are NOT stored here. "sync: false" makes Render ask for each value in the dashboard.
+# The Python version comes from .python-version.
+
+services:
+  - type: web
+    name: tripcrew-ai-with-mcp
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # No --reload in production; Render chooses the port
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: AVIATIONSTACK_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      # Your Render PostgreSQL "Internal Database URL" (same region as this service)
+      - key: DATABASE_URL
+        sync: false

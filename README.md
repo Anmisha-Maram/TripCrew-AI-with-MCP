@@ -85,6 +85,8 @@ TripCrew-AI-with-MCP/
 ├── pii_filter.py           # Masks personal data before the LLMs, logs or database
 ├── test.py                 # Run the planner from the terminal (with review)
 ├── requirements.txt
+├── render.yaml             # Render deployment blueprint (no keys inside)
+├── .python-version         # Python 3.11, used by Render
 ├── tools/
 │   ├── flight_tool.py      # AviationStack + text → airport-code route parsing
 │   ├── tavily_tool.py      # Hotel / web search
@@ -224,6 +226,17 @@ python mcp_servers/test_mcp_tools.py
 ```
 
 ---
+
+## ☁️ Deploy on Render
+
+The repo includes a **`render.yaml`** blueprint and a **`.python-version`** file (Python 3.11).
+
+1. Create a **PostgreSQL** database on Render (optional but recommended: plans waiting for your review are saved there and survive restarts).
+2. On Render, click **New → Blueprint** and connect this GitHub repository. Render reads `render.yaml`.
+3. Fill in the environment variables it asks for: `GROQ_API_KEY`, `TAVILY_API_KEY`, `AVIATIONSTACK_API_KEY`, `OPENWEATHER_API_KEY` and `DATABASE_URL` (the database's **Internal Database URL**, with the web service in the same region).
+4. Deploy. The logs should show `OK: Connected to PostgreSQL.`, then open your `.onrender.com` link.
+
+> On the free plan the service sleeps after about 15 minutes without visitors, so the first request after that takes up to a minute.
 
 ## 🔌 API endpoints
 
