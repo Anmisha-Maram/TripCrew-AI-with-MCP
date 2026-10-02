@@ -1,11 +1,29 @@
 # TripCrew AI with MCP ✈️
 
 **A multi-agent AI travel planner built with LangGraph and the Model Context Protocol (MCP).**
+
+🌐 **Live demo: <https://tripcrew-ai-with-mcp.onrender.com>** (hosted on Render's free plan, so the first visit may take up to a minute to wake up)
+
 Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to Delhi"*. A **supervisor agent** decides which agents your request needs, and a crew of AI agents finds live flights, searches hotels, checks the weather, plans each day and writes a complete travel plan. Before anything runs, a **privacy filter** hides your personal data and a **guardrail** stops unsafe requests. At the end, **you review the plan**: approve it, or ask for changes. While the agents work, the page shows photos of the destination's top attractions.
 
-> ✅ **Phase 2: Steps 1–7 done.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moved the tools to **MCP servers** and added a **weather agent**, a **supervisor agent**, **guardrails**, a **PII filter** and **human-in-the-loop** approval. Only deployment is left. See **Phase 2 progress** below.
+> ✅ **Phase 2 complete.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moved the tools to **MCP servers**, added a **weather agent**, a **supervisor agent**, **guardrails**, a **PII filter** and **human-in-the-loop** approval, and deployed the app on **Render**. See **Phase 2 progress** below.
 
 ---
+
+## 🌐 Try it online
+
+Open **<https://tripcrew-ai-with-mcp.onrender.com>** in any browser, on a computer or phone. No sign-up or installation is needed.
+
+1. **Wait for it to wake up.** The app runs on Render's free plan, which puts it to sleep after about 15 minutes without visitors. The first visit after that can take up to a minute; after that it's fast.
+2. **Describe your trip** in the box, for example:
+   - *Plan a 3 day trip from Delhi to Goa* (full trip: flights, hotels, weather, itinerary)
+   - *Find good hotels in Jaipur* (the supervisor runs only the hotel agent)
+   - *What's the weather in Goa this week?* (weather only)
+3. **Watch the crew work.** The sidebar shows each step live: privacy filter, guardrail, supervisor, then only the agents your request needs.
+4. **Review the draft.** Click **✓ Approve plan**, or type what should change (e.g. *"make day 2 more relaxed"*) and click **✎ Request changes** (up to 3 rounds).
+5. **Download the PDF.** The **⬇ Download PDF** button appears once you approve the plan.
+
+> Good to know: the demo shares free-tier API limits with every visitor (Groq tokens per minute, 100 AviationStack flight requests per month), so a plan can take a little longer when it's busy. Personal data such as emails and phone numbers is masked before it reaches the AI or the database, but it's still best not to enter real personal details in a demo.
 
 ## ✨ Features
 
@@ -229,14 +247,28 @@ python mcp_servers/test_mcp_tools.py
 
 ## ☁️ Deploy on Render
 
-The repo includes a **`render.yaml`** blueprint and a **`.python-version`** file (Python 3.11).
+The live demo runs on [Render](https://render.com) with this setup:
 
-1. Create a **PostgreSQL** database on Render (optional but recommended: plans waiting for your review are saved there and survive restarts).
-2. On Render, click **New → Blueprint** and connect this GitHub repository. Render reads `render.yaml`.
-3. Fill in the environment variables it asks for: `GROQ_API_KEY`, `TAVILY_API_KEY`, `AVIATIONSTACK_API_KEY`, `OPENWEATHER_API_KEY` and `DATABASE_URL` (the database's **Internal Database URL**, with the web service in the same region).
-4. Deploy. The logs should show `OK: Connected to PostgreSQL.`, then open your `.onrender.com` link.
+| Setting | Value |
+|---|---|
+| Service type | Web Service (free instance), auto-deploys from the `main` branch |
+| Region | Oregon (same region as the database) |
+| Runtime | Python 3.11 (from `.python-version`) |
+| Build command | `pip install -r requirements.txt` |
+| Start command | `uvicorn app:app --host 0.0.0.0 --port $PORT` |
+| Database | Render PostgreSQL, connected through its **Internal Database URL** |
+| Secrets | API keys and `DATABASE_URL` set as environment variables in the Render dashboard (never in the code) |
 
-> On the free plan the service sleeps after about 15 minutes without visitors, so the first request after that takes up to a minute.
+The weather and flight MCP servers start inside the same service (as `stdio` subprocesses), and Tavily's MCP server is hosted by Tavily, so no extra services are needed.
+
+**To deploy your own copy:**
+
+1. Create a **PostgreSQL** database on Render (recommended: plans waiting for your review are saved there and survive restarts; without it, the app uses in-memory storage).
+2. Click **New → Blueprint** and connect your fork of this repository; Render reads the included **`render.yaml`**. (Or click **New → Web Service** and enter the build and start commands above yourself.)
+3. Add the environment variables: `GROQ_API_KEY`, `TAVILY_API_KEY`, `AVIATIONSTACK_API_KEY`, `OPENWEATHER_API_KEY` and `DATABASE_URL` (the database's **Internal Database URL**; the web service must be in the same region).
+4. Deploy. The logs should show `OK: Connected to PostgreSQL.` and `Your service is live 🎉`, then open your `.onrender.com` link.
+
+> On the free plan the service sleeps after about 15 minutes without visitors, so the first request after that takes up to a minute. Render's free PostgreSQL databases also expire after a while, so check the expiry date on the database page.
 
 ## 🔌 API endpoints
 
@@ -266,7 +298,7 @@ The repo includes a **`render.yaml`** blueprint and a **`.python-version`** file
 - [x] **Step 5: Input guardrails.** Off-topic, unsafe and prompt-injection requests are blocked before any tools run: code rules → Llama Prompt Guard 2 → small LLM only for unclear requests (`guardrails.py`)
 - [x] **Step 6: PII filter.** Emails, phone numbers, passport, Aadhaar, PAN and card numbers are masked before they reach the LLMs, logs or database (`pii_filter.py`)
 - [x] **Step 7: Human-in-the-loop.** The graph pauses after the final answer with LangGraph `interrupt()`; you approve or request changes in the UI (up to 3 rounds), and only approved plans can be downloaded as PDF
-- [ ] Deploy online
+- [x] **Deploy online.** Live on Render at <https://tripcrew-ai-with-mcp.onrender.com> (web service + Render PostgreSQL, `render.yaml` blueprint)
 
 ## 📄 License
 
