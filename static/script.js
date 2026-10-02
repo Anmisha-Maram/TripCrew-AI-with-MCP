@@ -135,7 +135,8 @@ function startSlideshow(attractions) {
 }
 
 // =========================================================
-// Destination preview (calls GET /api/destination-preview)
+// Destination preview (calls POST /api/destination-preview)
+// POST keeps the text out of the URL, so it never appears in the server's access log
 // =========================================================
 
 let typingTimer = null;
@@ -150,7 +151,11 @@ async function updatePreview(text) {
   const requestId = ++previewRequestId;
   let data;
   try {
-    const response = await fetch(`/api/destination-preview?q=${encodeURIComponent(text)}`);
+    const response = await fetch("/api/destination-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q: text }),
+    });
     data = await response.json();
   } catch (err) {
     return;  // keep whatever background we have
@@ -187,6 +192,24 @@ const supervisorReason = document.getElementById("supervisor-reason");
 const SUPERVISOR_HINT = supervisorReason.textContent;  // "Decides which agents to run"
 const guardrailReason = document.getElementById("guardrail-reason");
 const GUARDRAIL_HINT = guardrailReason.textContent;    // "Checks every request is safe"
+const privacyReason = document.getElementById("privacy-reason");
+const PRIVACY_HINT = privacyReason.textContent;        // "Hides personal data from the AI"
+
+// {"email": 1, "phone": 2} -> "1 email, 2 phone numbers"
+const PII_NAMES = {
+  email: ["email", "emails"],
+  phone: ["phone number", "phone numbers"],
+  aadhaar: ["Aadhaar number", "Aadhaar numbers"],
+  pan: ["PAN", "PANs"],
+  passport: ["passport number", "passport numbers"],
+  card: ["card number", "card numbers"],
+};
+
+function describePii(found) {
+  return Object.entries(found || {})
+    .map(([kind, n]) => `${n} ${(PII_NAMES[kind] || [kind, kind])[n === 1 ? 0 : 1]}`)
+    .join(", ");
+}
 
 const STATUS_TEXT = {
   waiting: "Waiting",
@@ -219,12 +242,21 @@ function setStatus(agent, status) {
   li.querySelector(".agent-status").textContent = STATUS_TEXT[status];
 }
 
-// New request: everyone waits, the guardrail checks it first
+// New request: everyone waits, the privacy filter goes first
 function resetProgress() {
   runOrder = [];
   progress.querySelectorAll("li").forEach((li) => setStatus(li.dataset.agent, "waiting"));
+  privacyReason.textContent = PRIVACY_HINT;
   guardrailReason.textContent = GUARDRAIL_HINT;
   supervisorReason.textContent = SUPERVISOR_HINT;
+  setStatus("privacy_filter", "active");
+}
+
+// The privacy filter finished (it runs on the server before anything else): now the guardrail checks
+function privacyDone(found) {
+  setStatus("privacy_filter", "done");
+  const summary = describePii(found);
+  privacyReason.textContent = summary ? `Masked ${summary}` : "No personal data found";
   setStatus("guardrail_agent", "active");
 }
 
@@ -241,7 +273,7 @@ function guardrailBlocked(category) {
   setStatus("guardrail_agent", category === "greeting" ? "done" : "blocked");
   guardrailReason.textContent = BLOCK_LABELS[category] || "Request stopped";
   progress.querySelectorAll("li").forEach((li) => {
-    if (li.dataset.agent !== "guardrail_agent") setStatus(li.dataset.agent, "skipped");
+    if (!["privacy_filter", "guardrail_agent"].includes(li.dataset.agent)) setStatus(li.dataset.agent, "skipped");
   });
 }
 
@@ -456,7 +488,9 @@ async function planTrip(message) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
 
-        if (event.type === "step" && event.agent === "guardrail_agent") {
+        if (event.type === "privacy") {
+          privacyDone(event.found);
+        } else if (event.type === "step" && event.agent === "guardrail_agent") {
           guardrailPassed();
         } else if (event.type === "blocked") {
           guardrailBlocked(event.category);

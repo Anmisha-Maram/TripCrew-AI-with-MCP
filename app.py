@@ -6,10 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
-from backend import run_travel_agent, travel_graph
+from backend import new_request_state, run_travel_agent, travel_graph
+from pii_filter import mask_pii
 from tools.destination_tool import get_destination_preview
 
 BASE_DIR = Path(__file__).parent
@@ -24,6 +24,10 @@ class TravelRequest(BaseModel):
     thread_id: str | None = None
 
 
+class PreviewRequest(BaseModel):
+    q: str = ""
+
+
 # =========================
 # Web page
 # =========================
@@ -34,7 +38,7 @@ def home(request: Request):
 
 
 # =========================
-# Travel plan (waits for all 4 agents, then returns everything at once)
+# Travel plan (waits for all agents, then returns everything at once)
 # =========================
 
 @app.post("/api/travel")
@@ -45,6 +49,7 @@ def travel(req: TravelRequest):
 # =========================
 # Travel plan with live progress (used by the web page)
 # Runs the same graph, but sends one line of JSON for each event:
+#   {"type": "privacy", "found": {"email": 1}}                          (what was masked, counts only)
 #   {"type": "step", "agent": "guardrail_agent"}                        (request allowed)
 #   {"type": "blocked", "category": "off_topic", "message": "..."}      (request stopped - the end)
 #   {"type": "plan", "agents": ["hotel_agent", ...], "reason": "..."}   (from the supervisor)
@@ -56,22 +61,10 @@ def travel(req: TravelRequest):
 def travel_stream(req: TravelRequest):
     thread_id = req.thread_id or f"user_{uuid.uuid4().hex}"
     config = {"configurable": {"thread_id": thread_id}}
-    start_state = {
-        "messages": [HumanMessage(content=req.message)],
-        "user_query": req.message,
-        "flight_results": "",
-        "hotel_results": "",
-        "weather_plan": "",
-        "itinerary": "",
-        "llm_calls": 0,
-        "plan": [],          # empty = the supervisor makes a new plan for this request
-        "plan_reason": "",
-        "completed": [],
-        "blocked": False,
-        "block_reason": "",
-    }
+    start_state = new_request_state(req.message)  # personal data is masked here, before the graph
 
     def events():
+        yield json.dumps({"type": "privacy", "found": start_state["pii_found"]}) + "\n"
         try:
             # stream_mode="updates" gives us {agent_name: what_it_returned} after each agent
             for update in travel_graph.stream(start_state, config=config, stream_mode="updates"):
@@ -103,7 +96,7 @@ def travel_stream(req: TravelRequest):
                     else:
                         yield json.dumps({"type": "step", "agent": agent}) + "\n"
         except Exception as e:
-            print(f"[travel-stream] Error: {e}")
+            print(f"[travel-stream] Error: {type(e).__name__}: {e}", flush=True)
             yield json.dumps({
                 "type": "error",
                 "message": "Sorry, something went wrong while planning. Please try again in a minute.",
@@ -114,8 +107,17 @@ def travel_stream(req: TravelRequest):
 
 # =========================
 # Destination photos for the background
+#
+# The web page uses POST, so the request text travels in the body and never
+# appears in the server's access log (which prints every URL). The GET version
+# is kept for anyone calling it directly; both mask personal data first.
 # =========================
+
+@app.post("/api/destination-preview")
+def destination_preview_post(req: PreviewRequest):
+    return get_destination_preview(mask_pii(req.q)[0])
+
 
 @app.get("/api/destination-preview")
 def destination_preview(q: str = ""):
-    return get_destination_preview(q)
+    return get_destination_preview(mask_pii(q)[0])

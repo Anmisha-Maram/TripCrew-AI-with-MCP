@@ -259,7 +259,26 @@ body {
   border-color: rgba(56, 189, 248, 0.6);
 }
 
-/* The guardrail checks every request first: violet */
+/* The privacy filter masks personal data before anything else sees it: teal */
+.agents li.privacy {
+  background: rgba(45, 212, 191, 0.08);
+  border-color: rgba(45, 212, 191, 0.25);
+}
+
+.agents li.privacy .agent-icon { background: rgba(45, 212, 191, 0.15); }
+
+.agents li.privacy small {
+  color: #99f6e4;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.agents li.privacy.active {
+  background: rgba(45, 212, 191, 0.14);
+  border-color: rgba(45, 212, 191, 0.6);
+}
+
+/* The guardrail checks every request next: violet */
 .agents li.guardrail {
   background: rgba(167, 139, 250, 0.08);
   border-color: rgba(167, 139, 250, 0.25);

@@ -36,6 +36,7 @@ from tools.flight_tool import search_flights
 from tools.weather_planner import build_weather_plan, far_future_note, is_far_future, weather_city
 from supervisor import AGENT_ORDER, decide_plan
 from guardrails import check_request
+from pii_filter import describe as describe_pii, mask_pii
 
 
 # =========================
@@ -92,7 +93,8 @@ def call_llm(messages, retries: int = 4):
 
 class TravelState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]  # new messages get appended
-    user_query: str
+    user_query: str        # the request with personal data already masked ([EMAIL], [PHONE], ...)
+    pii_found: dict        # what the privacy filter masked, as counts only: {"email": 1}
     flight_results: str
     hotel_results: str
     weather_plan: str      # one labelled line per day (Outdoor / Mixed / Hot / Indoor)
@@ -402,6 +404,36 @@ travel_graph = graph.compile(checkpointer=checkpointer)
 
 
 # =========================
+# Starting a request (used by run_travel_agent and app.py)
+#
+# PII is masked HERE, before the graph starts, because LangGraph saves the input
+# to PostgreSQL before the first node runs. From this point on, the LLMs, the
+# database, LangSmith and the logs only ever see "[EMAIL]", "[PHONE]", ...
+# =========================
+
+def new_request_state(user_input: str) -> dict:
+    masked, pii_counts = mask_pii(user_input)
+    if pii_counts:
+        print(f"-> Privacy filter: masked {describe_pii(pii_counts)}")  # counts only, never the values
+
+    return {
+        "messages": [HumanMessage(content=masked)],
+        "user_query": masked,
+        "pii_found": pii_counts,
+        "flight_results": "",
+        "hotel_results": "",
+        "weather_plan": "",
+        "itinerary": "",
+        "llm_calls": 0,
+        "plan": [],          # empty = the supervisor makes a new plan for this request
+        "plan_reason": "",
+        "completed": [],
+        "blocked": False,
+        "block_reason": "",
+    }
+
+
+# =========================
 # Function used by test.py and FastAPI (app.py)
 # =========================
 
@@ -411,23 +443,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
 
     config = {"configurable": {"thread_id": thread_id}}
 
-    result = travel_graph.invoke(
-        {
-            "messages": [HumanMessage(content=user_input)],
-            "user_query": user_input,
-            "flight_results": "",
-            "hotel_results": "",
-            "weather_plan": "",
-            "itinerary": "",
-            "llm_calls": 0,
-            "plan": [],          # empty = the supervisor makes a new plan for this request
-            "plan_reason": "",
-            "completed": [],
-            "blocked": False,
-            "block_reason": "",
-        },
-        config=config,
-    )
+    result = travel_graph.invoke(new_request_state(user_input), config=config)
 
     return {
         "thread_id": thread_id,
@@ -441,4 +457,5 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
         "plan_reason": result.get("plan_reason", ""),
         "blocked": result.get("blocked", False),
         "block_reason": result.get("block_reason", ""),
+        "pii_found": result.get("pii_found", {}),
     }
