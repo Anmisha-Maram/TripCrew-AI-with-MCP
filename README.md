@@ -1,46 +1,62 @@
 # TripCrew AI with MCP ✈️
 
 **A multi-agent AI travel planner built with LangGraph and the Model Context Protocol (MCP).**
-Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to Delhi"*, and a crew of AI agents finds live flights, searches hotels, plans each day and writes a complete travel plan. While they work, the page shows photos of the destination's top attractions.
+Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to Delhi"*. A **supervisor agent** decides which agents your request needs, and a crew of AI agents finds live flights, searches hotels, checks the weather, plans each day and writes a complete travel plan. Before anything runs, a **privacy filter** hides your personal data and a **guardrail** stops unsafe requests. At the end, **you review the plan**: approve it, or ask for changes. While the agents work, the page shows photos of the destination's top attractions.
 
-> 🚧 **Phase 2, in progress.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moves the tools to **MCP servers** and adds a **weather agent**, a **supervisor agent** that decides which agents to run, guardrails, a PII filter and human-in-the-loop approval. See **Phase 2 progress** below.
+> ✅ **Phase 2: Steps 1–7 done.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moved the tools to **MCP servers** and added a **weather agent**, a **supervisor agent**, **guardrails**, a **PII filter** and **human-in-the-loop** approval. Only deployment is left. See **Phase 2 progress** below.
 
 ---
 
 ## ✨ Features
 
-- **4-agent LangGraph pipeline:** Flight → Hotel → Itinerary → Final agents share one state and each adds its part.
+- **Supervisor + 5 agents (LangGraph):** the supervisor reads your request and runs only the agents it needs (e.g. hotels only, weather only, or the full trip). Every agent reports back to the supervisor, which picks the next one.
+- **Tools on MCP servers:** weather and flights run as custom MCP servers, and hotel search uses Tavily's hosted MCP server, all connected through `MultiServerMCPClient`. If a server is down, the agents automatically use the direct Python tools instead.
+- **Weather agent:** labels each trip day 🌧️ Indoor, 🥵 Hot, 🌦️ Mixed or ☀️ Outdoor from the 5-day forecast, using fixed rules (0 tokens). The itinerary puts museums on rainy days and sightseeing on sunny ones.
 - **Live flight data** from AviationStack, with a custom parser that turns free text like *"Nepal trip from India"* into airport codes (DEL → KTM).
-- **Hotel and destination research** using Tavily web search.
+- **Input guardrails:** off-topic, unsafe and prompt-injection requests are stopped before any agent or tool runs. Three layers, cheapest first: code rules → Llama Prompt Guard 2 (0 tokens) → a small LLM only for unclear requests.
+- **PII filter:** emails, phone numbers, Aadhaar, PAN, passport and card numbers are masked (`[EMAIL]`, `[PHONE]`, …) before they reach the LLMs, the logs or the database. Checksums (Luhn, Verhoeff) keep false alarms low.
+- **Human-in-the-loop review:** the plan pauses as a *draft* (LangGraph `interrupt()`). Approve it, or type what should change and the crew rewrites it (up to 3 rounds). **Only an approved plan can be downloaded as a PDF.** Change requests also go through the PII filter and guardrail.
 - **Destination-aware gallery:** the app detects the city you type and shows a slideshow of its top attractions, with photos and captions from Wikipedia.
-- **Live agent progress:** each agent's status (*Working… → Done*) streams to the page as it runs.
+- **Live agent progress:** each step's status (*Working… → Done*) streams to the page as it runs, including which agents the supervisor skipped and why.
 - **Download your plan as a PDF**, with a clean, printer-friendly layout.
-- **Conversation memory** with LangGraph's PostgreSQL checkpointer, falling back to in-memory storage when no database is set.
-- **Free-tier friendly:** trimmed tool results, capped response length, low reasoning effort and automatic retry when Groq's rate limit is hit.
+- **Conversation memory** with LangGraph's PostgreSQL checkpointer (through a connection pool that replaces dropped connections), falling back to in-memory storage when no database is set.
+- **Free-tier friendly:** trimmed tool results, capped response length, low reasoning effort, small models for the supervisor and guardrail, and automatic retry when Groq's rate limit is hit.
 
 ---
 
 ## 🧠 How it works
 
 ```
-User request
+Your request
     │
     ▼
-┌──────────────┐   ┌──────────────┐   ┌────────────────┐   ┌──────────────┐
-│ Flight agent │ → │ Hotel agent  │ → │ Itinerary agent│ → │ Final agent  │
-│ AviationStack│   │ Tavily search│   │ Groq LLM       │   │ Groq LLM     │
-└──────────────┘   └──────────────┘   └────────────────┘   └──────────────┘
-                                                                  │
-                         State saved after every step             ▼
-                         (PostgreSQL checkpointer)          Final travel plan
+🔒 Privacy filter ──► 🛡️ Guardrail ──blocked──► friendly message (END)
+                          │ allowed
+                          ▼
+              ┌──── 🧭 Supervisor ◄──────────────────────────────┐
+              │   picks the agents                                │ each agent
+              └──► ✈️ Flight / 🏨 Hotel / ☀️ Weather / 🗺️ Itinerary ┘ reports back
+                          │ plan done
+                          ▼
+                   📝 Final agent ──► 🙋 Your review ──approve──► ✅ Approved plan + PDF
+                          ▲                 │
+                          └──── changes ────┘  (up to 3 rounds)
+
+            State is saved after every step (PostgreSQL checkpointer),
+            so a plan can wait for your review as long as needed.
 ```
 
-| Agent | What it does | Tool |
+| Step | What it does | Tool / model |
 |---|---|---|
+| **Privacy filter** | Masks personal data before the graph starts, so nothing after it sees the real values | Regex + checksums (no AI) |
+| **Guardrail** | Stops off-topic, unsafe and prompt-injection requests | Code rules → Llama Prompt Guard 2 → `openai/gpt-oss-20b` (only if unclear) |
+| **Supervisor** | Decides which agents run, in a fixed order. Flights only run if you say where you travel from or ask about flights | `openai/gpt-oss-20b` (one small call), keyword rules as backup |
 | **Flight agent** | Works out the route from your text and fetches live flights | Flight MCP server → AviationStack API |
 | **Hotel agent** | Searches the web for hotels at the destination | Tavily's hosted MCP server |
-| **Itinerary agent** | Writes a budget-aware, day-by-day plan | Groq (`openai/gpt-oss-120b`) |
+| **Weather agent** | Labels each day Indoor / Hot / Mixed / Outdoor | Weather MCP server → OpenWeather, fixed rules (0 tokens) |
+| **Itinerary agent** | Writes a budget-aware, day-by-day plan that follows the weather labels | Groq (`openai/gpt-oss-120b`) |
 | **Final agent** | Turns everything into a polished plan: summary, flights, hotels, itinerary, budget and tips | Groq (`openai/gpt-oss-120b`) |
+| **Your review** | Pauses the graph until you approve or ask for changes | LangGraph `interrupt()` / `Command(resume=...)` |
 
 The **attraction gallery** runs separately. A small model (`openai/gpt-oss-20b`) suggests the destination's top attractions, Wikipedia supplies the photos, and results are cached per city so the same destination doesn't use tokens twice.
 
@@ -48,26 +64,31 @@ The **attraction gallery** runs separately. A small model (`openai/gpt-oss-20b`)
 
 | Area | Tools |
 |---|---|
-| Agents and orchestration | LangGraph, LangChain |
-| LLM | Groq: `openai/gpt-oss-120b` (agents), `openai/gpt-oss-20b` (attractions) |
+| Agents and orchestration | LangGraph (supervisor graph, `interrupt()` for human review), LangChain |
+| LLM | Groq: `openai/gpt-oss-120b` (itinerary + final agents), `openai/gpt-oss-20b` (supervisor, guardrail, attractions) |
+| Safety | Llama Prompt Guard 2 (`meta-llama/llama-prompt-guard-2-86m`), PII filter with Luhn / Verhoeff checksums |
 | Tools and APIs | AviationStack, Tavily, OpenWeather, Wikipedia REST API |
 | MCP | `mcp` (FastMCP servers), `langchain-mcp-adapters` |
 | Backend | Python 3.11, FastAPI, Uvicorn, streaming responses |
-| Database | PostgreSQL (LangGraph checkpointer) |
+| Database | PostgreSQL (LangGraph checkpointer, `psycopg_pool` connection pool) |
 | Frontend | HTML, CSS, JavaScript, marked + DOMPurify (Markdown), html2pdf.js (PDF) |
 | Location data | pycountry, airportsdata |
 
 ## 📁 Project structure
 
 ```
-TripCrew-AI/
-├── app.py                  # FastAPI server: web page + API endpoints
-├── backend.py              # LangGraph graph: the 4 agents, state and checkpointer
-├── test.py                 # Run the planner from the terminal
+TripCrew-AI-with-MCP/
+├── app.py                  # FastAPI server: web page, live progress stream, review endpoint
+├── backend.py              # LangGraph graph: agents, human review, state and checkpointer
+├── supervisor.py           # Supervisor: chooses which agents run for each request
+├── guardrails.py           # Input guardrails: rules, Prompt Guard 2, small LLM topic check
+├── pii_filter.py           # Masks personal data before the LLMs, logs or database
+├── test.py                 # Run the planner from the terminal (with review)
 ├── requirements.txt
 ├── tools/
 │   ├── flight_tool.py      # AviationStack + text → airport-code route parsing
 │   ├── tavily_tool.py      # Hotel / web search
+│   ├── weather_planner.py  # Indoor / Hot / Mixed / Outdoor day labels (no LLM)
 │   ├── destination_tool.py # Attractions + Wikipedia photos for the gallery
 │   └── mcp_tools.py        # Connects to all MCP servers (MultiServerMCPClient)
 ├── mcp_servers/
@@ -79,7 +100,7 @@ TripCrew-AI/
 │   └── index.html          # Web page
 └── static/
     ├── style.css
-    └── script.js           # Gallery, live progress, PDF download
+    └── script.js           # Gallery, live progress, review panel, PDF download
 ```
 
 ---
@@ -100,8 +121,8 @@ TripCrew-AI/
 ### 2. Clone the repository
 
 ```bash
-git clone https://github.com/Anmisha-Maram/TripCrew-AI.git
-cd TripCrew-AI
+git clone https://github.com/Anmisha-Maram/TripCrew-AI-with-MCP.git
+cd TripCrew-AI-with-MCP
 ```
 
 ### 3. Create and activate an environment
@@ -159,14 +180,17 @@ DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/postgres?sslmode
 ### 6. Run the web app
 
 ```bash
-uvicorn app:app --reload
+python -m uvicorn app:app --reload
 ```
 
 Open **<http://127.0.0.1:8000>** in your browser and try:
 
-- *plan a 5 day trip from Hyderabad to Delhi*
-- *plan a trip from Delhi to Paris*
+- *plan a 5 day trip from Hyderabad to Delhi* (full trip: all agents)
+- *find good hotels in Jaipur* (the supervisor runs only the hotel agent)
+- *what's the weather in Goa this week?* (weather only)
 - *7 day trip from Mumbai to Dubai under ₹1,50,000*
+
+When the draft appears, approve it to unlock **Download PDF**, or type a change such as *"make day 2 more relaxed"* and click **Request changes**.
 
 ### 7. (Optional) Run in the terminal
 
@@ -174,7 +198,22 @@ Open **<http://127.0.0.1:8000>** in your browser and try:
 python test.py
 ```
 
-### 8. (Optional) Test the MCP servers
+After the draft is printed, press Enter to approve it or type what should change.
+
+### 8. (Optional) Test the parts on their own
+
+These demos are free (no LLM tokens) unless a flag says otherwise:
+
+```bash
+python pii_filter.py              # masks sample emails, phones, Aadhaar, PAN, passport, cards
+python guardrails.py              # ~15 sample requests through the code rules
+python guardrails.py --all        # the same requests through all 3 layers (uses Groq)
+python supervisor.py              # which agents each sample request gets (keyword rules)
+python supervisor.py --llm        # the real LLM supervisor (~300 tokens per request)
+python tools/weather_planner.py   # day labels from sample forecasts
+```
+
+### 9. (Optional) Test the MCP servers
 
 ```bash
 # Weather server on its own: lists its tools and asks for forecasts for a few cities
@@ -191,14 +230,17 @@ python mcp_servers/test_mcp_tools.py
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/` | Web interface |
-| `POST` | `/api/travel` | Runs all agents and returns the full plan. Body: `{"message": "...", "thread_id": "optional"}` |
-| `POST` | `/api/travel-stream` | Same as above, but streams each agent's progress as JSON lines (used by the web page) |
-| `GET` | `/api/destination-preview?q=Paris` | Top attractions and photos for a destination |
+| `POST` | `/api/travel` | Runs the agents and returns the draft plan. Body: `{"message": "...", "thread_id": "optional"}`. The reply's `status` is `awaiting_review`, `approved` or `blocked` |
+| `POST` | `/api/travel-stream` | Same as above, but streams progress as JSON lines (used by the web page): `privacy`, `step`, `plan`, `blocked`, `review` (draft ready, graph paused) and `error` |
+| `POST` | `/api/travel-review` | Answers a paused draft. Body: `{"thread_id": "...", "action": "approve" \| "change", "feedback": "what to change"}`. Streams the same events, ending with a new `review` (after changes) or `done` (approved) |
+| `POST` | `/api/destination-preview` | Top attractions and photos for a destination. Body: `{"q": "Paris"}` (a `GET` version with `?q=` also works) |
 
 ## ⚠️ Notes and limitations
 
 - **No ticket prices:** AviationStack provides live flight *status*, not fares. Prices in the plan are AI estimates and are labelled as such.
-- **Groq free tier:** each model has a tokens-per-minute limit. The app trims tool results and retries automatically, but very large requests may take a little longer.
+- **Weather:** the forecast covers the next 5 days only. For trips further away, the plan says so instead of guessing.
+- **PII filter:** names and street addresses are not masked (they have no fixed pattern).
+- **Groq free tier:** each model has a tokens-per-minute limit. The app trims tool results and retries automatically, but very large requests may take a little longer. Approving a plan costs 0 tokens; each change round costs 1–2 LLM calls.
 - **AviationStack free plan:** 100 requests per month.
 - Attraction photos come from Wikipedia and are credited under each image.
 
@@ -206,16 +248,12 @@ python mcp_servers/test_mcp_tools.py
 
 - [x] **Step 1: Weather MCP server.** A custom OpenWeather server (`mcp_servers/weather_server.py`), standalone and tested
 - [x] **Step 2: Tools on MCP.** Weather MCP, a flight MCP server wrapping the AviationStack tool, and Tavily's hosted MCP, connected to LangGraph with `langchain-mcp-adapters` (`MultiServerMCPClient`), with automatic fallback to the direct tools if a server is unavailable
-- [ ] **Step 3: Weather agent.** Indoor vs outdoor suggestions for each day, based on the forecast
-- [ ] **Step 4: Supervisor agent.** Reads the request and decides which agents run and in what order (e.g. hotels only, weather only, or the full trip)
-- [ ] **Step 5: Input guardrails.** Block off-topic, unsafe and prompt-injection requests before any tools run
-- [ ] **Step 6: PII filter.** Mask emails, phone numbers, passport, Aadhaar, PAN and card numbers before they reach the LLM, logs or database
-- [ ] **Step 7: Human-in-the-loop.** Pause after the draft itinerary with LangGraph `interrupt()`, approve or request changes in the UI, and download only approved plans as PDF
+- [x] **Step 3: Weather agent.** Labels each day Indoor / Hot / Mixed / Outdoor from the forecast with fixed rules (`tools/weather_planner.py`, 0 tokens), and the itinerary follows the labels
+- [x] **Step 4: Supervisor agent.** One small LLM call reads the request and decides which agents run (e.g. hotels only, weather only, or the full trip); agents report back to the supervisor after each step (`supervisor.py`)
+- [x] **Step 5: Input guardrails.** Off-topic, unsafe and prompt-injection requests are blocked before any tools run: code rules → Llama Prompt Guard 2 → small LLM only for unclear requests (`guardrails.py`)
+- [x] **Step 6: PII filter.** Emails, phone numbers, passport, Aadhaar, PAN and card numbers are masked before they reach the LLMs, logs or database (`pii_filter.py`)
+- [x] **Step 7: Human-in-the-loop.** The graph pauses after the final answer with LangGraph `interrupt()`; you approve or request changes in the UI (up to 3 rounds), and only approved plans can be downloaded as PDF
 - [ ] Deploy online
-
-## 🙏 Acknowledgements
-
-Inspired by [entbappy's TripMate AI](https://github.com/entbappy/TripMate-AI-A-Multi-Agent-Travel-Planner-with-LangGraph) tutorial. Built on top of it: the destination-aware attraction gallery, live agent progress streaming, PDF export, the migration to AviationStack's APILayer API, and token optimisation for Groq's free tier.
 
 ## 📄 License
 
