@@ -3,7 +3,7 @@
 **A multi-agent AI travel planner built with LangGraph and the Model Context Protocol (MCP).**
 Describe your trip in plain English, like *"plan a 5 day trip from Hyderabad to Delhi"*, and a crew of AI agents finds live flights, searches hotels, plans each day and writes a complete travel plan. While they work, the page shows photos of the destination's top attractions.
 
-> 🚧 **Phase 2, in progress.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moves the tools to **MCP servers** and adds a weather agent, guardrails, a PII filter and human-in-the-loop approval. See **Phase 2 progress** below.
+> 🚧 **Phase 2, in progress.** This project builds on [TripCrew AI](https://github.com/Anmisha-Maram/TripCrew-AI) (the LangGraph-only version). Phase 2 moves the tools to **MCP servers** and adds a **weather agent**, a **supervisor agent** that decides which agents to run, guardrails, a PII filter and human-in-the-loop approval. See **Phase 2 progress** below.
 
 ---
 
