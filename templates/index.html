@@ -78,6 +78,11 @@
           <span class="agent-text"><strong>Final agent</strong><small>Writing your plan</small></span>
           <span class="agent-status">Waiting</span>
         </li>
+        <li data-agent="human_review" class="review">
+          <span class="agent-icon">🙋</span>
+          <span class="agent-text"><strong>Your review</strong><small id="review-reason">You approve the plan</small></span>
+          <span class="agent-status">Waiting</span>
+        </li>
       </ol>
 
       <p class="error" id="error" hidden></p>
@@ -103,9 +108,24 @@
     <!-- BELOW: the final plan -->
     <article class="glass result" id="result" hidden>
       <div class="result-actions">
+        <span class="plan-badge" id="plan-badge" hidden></span>
         <button type="button" class="download-button" id="download-button">⬇ Download PDF</button>
       </div>
       <div class="result-body" id="result-body"></div>
+
+      <!-- Human review: shown while the plan is a draft. Only an approved plan can be downloaded. -->
+      <form class="review-panel" id="review-panel" hidden>
+        <h3>Happy with this plan?</h3>
+        <p class="review-hint" id="review-hint">Approve it to download the PDF, or tell the crew what to change.</p>
+        <textarea id="review-feedback" rows="2" maxlength="1500"
+                  placeholder="What should change? e.g. make Day 4 less rushed, add a vegetarian food spot"></textarea>
+        <div class="review-actions">
+          <button type="button" class="change-button" id="change-button">✎ Request changes</button>
+          <button type="button" class="approve-button" id="approve-button">✓ Approve plan</button>
+        </div>
+        <p class="review-note" id="review-note" hidden></p>
+      </form>
+
       <p class="result-meta" id="result-meta"></p>
     </article>
 

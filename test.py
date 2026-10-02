@@ -10,7 +10,7 @@
 import sys
 sys.stdout.reconfigure(encoding="utf-8")  # Windows console defaults to cp1252
 
-from backend import run_travel_agent
+from backend import review_travel_plan, run_travel_agent
 
 # Quick tool tests (uncomment to run one at a time)
 # from tools.tavily_tool import tavily_search
@@ -25,6 +25,16 @@ response = run_travel_agent(
     user_input=user_input,
     thread_id="test_user",
 )
+
+# Human review: the plan waits until you approve it (or ask for changes)
+while response["status"] == "awaiting_review":
+    print("\nDRAFT PLAN:\n")
+    print(response["answer"])
+    changes = input("\nPress Enter to approve, or type what should change: ").strip()
+    if changes:
+        response = review_travel_plan("test_user", "change", changes)
+    else:
+        response = review_travel_plan("test_user", "approve")
 
 print("\nFINAL RESPONSE:\n")
 print(response["answer"])

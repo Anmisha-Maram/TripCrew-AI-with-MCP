@@ -235,6 +235,17 @@ body {
 .agents li.done .agent-status { color: var(--green); }
 .agents li.done .agent-status::before { content: "✓"; font-weight: 700; }
 
+/* Your turn: the plan waits for the user's approval (gold, like "working", but no spinner) */
+.agents li.yours {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.agents li.yours .agent-status { color: var(--accent); font-weight: 600; }
+.agents li.yours .agent-status::before { content: "●"; animation: pulse 1.6s ease-in-out infinite; }
+
+@keyframes pulse { 50% { opacity: 0.3; } }
+
 /* Skipped: the supervisor decided this agent isn't needed */
 .agents li.skipped { opacity: 0.45; }
 .agents li.skipped .agent-text strong { text-decoration: line-through; text-decoration-color: rgba(148, 163, 184, 0.6); }
@@ -478,8 +489,97 @@ body {
 .result-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 8px;
 }
+
+/* "Draft" or "Approved" label next to the download button */
+.plan-badge {
+  margin-right: auto;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px dashed rgba(251, 191, 36, 0.6);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.plan-badge.approved {
+  border: 1px solid rgba(52, 211, 153, 0.6);
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--green);
+}
+
+/* Human review panel under a draft plan */
+.review-panel {
+  max-width: 920px;
+  margin: 32px auto 0;
+  padding: 20px 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.06);
+}
+
+.review-panel h3 {
+  margin: 0 0 4px;
+  font-family: "Playfair Display", serif;
+  font-size: 1.3rem;
+}
+
+.review-hint { margin: 0 0 12px; color: var(--muted); font-size: 0.92rem; }
+
+.review-panel textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+}
+
+.review-panel textarea:focus { outline: none; border-color: var(--accent); }
+
+.review-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.review-actions button {
+  padding: 10px 18px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+
+.change-button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.change-button:hover { background: rgba(255, 255, 255, 0.12); }
+
+.approve-button {
+  border: 1px solid var(--green);
+  background: var(--green);
+  color: #052e1f;
+}
+
+.approve-button:hover { background: #6ee7b7; }
+.review-actions button:disabled { opacity: 0.55; cursor: wait; }
+
+.review-note { margin: 10px 0 0; font-size: 0.88rem; color: var(--accent); }
 
 .download-button {
   padding: 10px 18px;
@@ -675,5 +775,6 @@ body {
 /* People who turned off animations in their system settings */
 @media (prefers-reduced-motion: reduce) {
   .gallery-photo { animation: none !important; }
+  .agents li.yours .agent-status::before { animation: none; }
   .gallery-layer { transition-duration: 0.01s; }
 }

@@ -14,6 +14,8 @@ Three layers, cheapest first:
   3. Small LLM check (gpt-oss-20b, ~200 tokens) ONLY when a request is unclear:
      no travel words and no known place, or "risky" words like smuggle / fake / bypass
 
+check_feedback() checks change requests on a draft plan with layers 1 and 2 only.
+
 Privacy: only the category is logged ("blocked: injection"), never the request text.
 
 Try it:
@@ -133,6 +135,21 @@ def injection_score(text: str) -> float:
     return float(response.choices[0].message.content.strip())
 
 
+def check_injection(text: str, use_apis: bool = True) -> tuple[dict | None, str]:
+    """Layer 2. Returns (the 'blocked' result, or None if it looks safe; which check was used)."""
+    try:
+        if not use_apis:
+            raise RuntimeError("APIs off")
+        score = injection_score(text)
+        if score >= INJECTION_THRESHOLD:
+            return result(False, "injection", "prompt_guard", f"score {score:.2f}"), "prompt_guard"
+        return None, f"prompt_guard score {score:.3f}"
+    except Exception as e:
+        if INJECTION_PATTERNS.search(text):
+            return result(False, "injection", "backup_rules"), "backup_rules"
+        return None, "backup_rules" if not use_apis else f"backup_rules ({type(e).__name__})"
+
+
 # =========================================================
 # Layer 3: topic and safety check (small LLM, only when unclear)
 # =========================================================
@@ -187,17 +204,9 @@ def check_request(text: str, use_apis: bool = True) -> dict:
         return result(False, "unsafe", "rules")
 
     # ---- Layer 2: prompt injection ----
-    try:
-        if not use_apis:
-            raise RuntimeError("APIs off")
-        score = injection_score(text)
-        if score >= INJECTION_THRESHOLD:
-            return result(False, "injection", "prompt_guard", f"score {score:.2f}")
-        injection_layer = f"prompt_guard score {score:.3f}"
-    except Exception as e:
-        if INJECTION_PATTERNS.search(text):
-            return result(False, "injection", "backup_rules")
-        injection_layer = "backup_rules" if not use_apis else f"backup_rules ({type(e).__name__})"
+    blocked, injection_layer = check_injection(text, use_apis)
+    if blocked:
+        return blocked
 
     # ---- Layer 3: topic and safety (only when unclear) ----
     looks_like_travel = bool(TRAVEL_WORDS.search(text) or detect_destination(text))
@@ -219,6 +228,25 @@ def check_request(text: str, use_apis: bool = True) -> dict:
     if verdict == "travel":
         return result(True, "ok", "llm", reason)
     return result(False, verdict, "llm", reason)
+
+
+def check_feedback(text: str, use_apis: bool = True) -> dict:
+    """
+    For change requests on a draft plan ("make day 4 less rushed"), used by the human review step.
+    The trip request itself was already checked, so only layers 1 and 2 run (0 tokens).
+    No topic check: short edits often have no travel words and would be wrongly refused.
+    """
+    text = (text or "").strip()
+
+    if not text:
+        return result(False, "empty", "rules")
+    if len(text) > MAX_CHARS:
+        return result(False, "too_long", "rules")
+    if any(re.search(p, text, re.IGNORECASE) for p in UNSAFE_PATTERNS):
+        return result(False, "unsafe", "rules")
+
+    blocked, injection_layer = check_injection(text, use_apis)
+    return blocked or result(True, "ok", "rules", injection_layer)
 
 
 # =========================================================

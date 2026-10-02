@@ -24,6 +24,13 @@ const result = document.getElementById("result");
 const resultBody = document.getElementById("result-body");
 const resultMeta = document.getElementById("result-meta");
 const downloadButton = document.getElementById("download-button");
+const planBadge = document.getElementById("plan-badge");
+const reviewPanel = document.getElementById("review-panel");
+const reviewHint = document.getElementById("review-hint");
+const reviewFeedback = document.getElementById("review-feedback");
+const reviewNote = document.getElementById("review-note");
+const approveButton = document.getElementById("approve-button");
+const changeButton = document.getElementById("change-button");
 const chip = document.getElementById("destination-chip");
 const caption = document.getElementById("caption");
 const captionDots = document.getElementById("caption-dots");
@@ -194,6 +201,8 @@ const guardrailReason = document.getElementById("guardrail-reason");
 const GUARDRAIL_HINT = guardrailReason.textContent;    // "Checks every request is safe"
 const privacyReason = document.getElementById("privacy-reason");
 const PRIVACY_HINT = privacyReason.textContent;        // "Hides personal data from the AI"
+const reviewReason = document.getElementById("review-reason");
+const REVIEW_HINT = reviewReason.textContent;          // "You approve the plan"
 
 // {"email": 1, "phone": 2} -> "1 email, 2 phone numbers"
 const PII_NAMES = {
@@ -214,6 +223,7 @@ function describePii(found) {
 const STATUS_TEXT = {
   waiting: "Waiting",
   active: "Working…",
+  yours: "Your turn",   // the plan waits for the user's approval
   done: "Done",
   skipped: "Skipped",
   stopped: "Stopped",
@@ -230,15 +240,17 @@ const BLOCK_LABELS = {
   injection: "Looks like a prompt-injection attempt",
 };
 
-// The agents the supervisor chose for this request, in order (always ending with final_agent)
+// The agents running now, in order (always ending with final_agent).
+// After a change request, only the agents that rewrite the plan.
 let runOrder = [];
+let crewSize = 0;  // how many agents the supervisor chose (for the line under the plan)
 
 // Show one status on one agent's box
 function setStatus(agent, status) {
   const li = progress.querySelector(`li[data-agent="${agent}"]`);
   if (!li) return;
-  li.classList.remove("active", "done", "skipped", "blocked");
-  if (["active", "done", "skipped", "blocked"].includes(status)) li.classList.add(status);
+  li.classList.remove("active", "yours", "done", "skipped", "blocked");
+  if (["active", "yours", "done", "skipped", "blocked"].includes(status)) li.classList.add(status);
   li.querySelector(".agent-status").textContent = STATUS_TEXT[status];
 }
 
@@ -249,6 +261,7 @@ function resetProgress() {
   privacyReason.textContent = PRIVACY_HINT;
   guardrailReason.textContent = GUARDRAIL_HINT;
   supervisorReason.textContent = SUPERVISOR_HINT;
+  reviewReason.textContent = REVIEW_HINT;
   setStatus("privacy_filter", "active");
 }
 
@@ -280,6 +293,7 @@ function guardrailBlocked(category) {
 // The supervisor's plan arrived: show its reason, grey out skipped agents, start the first one
 function applyPlan(agents, reason) {
   runOrder = [...agents, "final_agent"];
+  crewSize = runOrder.length;
   setStatus("supervisor_agent", "done");
   supervisorReason.textContent = reason || SUPERVISOR_HINT;
   AGENTS.forEach((agent) => {
@@ -325,12 +339,16 @@ function renderNotice(text, category) {
     ? ""
     : "Stopped by the guardrail before the supervisor or any tool ran.";
   downloadButton.hidden = true;
+  planBadge.hidden = true;
+  reviewPanel.hidden = true;
   result.hidden = false;
   result.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function renderPlan(answer, llmCalls, message) {
-  lastPlan = { answer, message, destination: currentDestination || null };
+// approved = false: a draft with the review panel. true: the final plan, ready to download.
+function renderPlan(answer, llmCalls, message, approved = false) {
+  // Only an approved plan can be downloaded
+  lastPlan = approved ? { answer, message, destination: currentDestination || null } : null;
   result.classList.remove("notice", "notice-blocked");
 
   const html = planToHtml(answer);
@@ -341,11 +359,16 @@ function renderPlan(answer, llmCalls, message) {
     resultBody.textContent = answer;
     resultBody.style.whiteSpace = "pre-wrap";
   }
-  const agentCount = runOrder.length || AGENTS.length;
+  const agentCount = crewSize || AGENTS.length;
   resultMeta.textContent =
     `Planned by the supervisor and ${agentCount} AI agent${agentCount === 1 ? "" : "s"} · ` +
     `${llmCalls} LLM calls · Prices are rough estimates, not live quotes.`;
-  downloadButton.hidden = !window.html2pdf;  // hide the button if the PDF library didn't load
+  downloadButton.hidden = !approved || !window.html2pdf;  // also hidden if the PDF library didn't load
+  planBadge.textContent = approved ? "✓ Approved by you" : "Draft · waiting for your review";
+  planBadge.classList.toggle("approved", approved);
+  planBadge.hidden = false;
+  reviewPanel.hidden = approved;
+  reviewNote.hidden = true;
   result.hidden = false;
   result.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -454,14 +477,64 @@ async function downloadPdf() {
 downloadButton.addEventListener("click", downloadPdf);
 
 // =========================================================
+// Reading the server's live events (one line of JSON each)
+// =========================================================
+
+// Hands each event to handleEvent. Returns true if an event ended the stream
+// (handleEvent returned true), false if the connection closed too early.
+async function readEvents(response, handleEvent) {
+  if (!response.ok || !response.body) throw new Error(`Server error ${response.status}`);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return false;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop();  // last piece may be an incomplete line
+
+    for (const line of lines) {
+      if (line.trim() && handleEvent(JSON.parse(line))) return true;
+    }
+  }
+}
+
+// Events that both planning and reviewing send. Returns true when the stream is finished.
+function handleAgentEvent(event) {
+  if (event.type === "step") {
+    // This agent finished, so the next one in the plan is now working
+    agentFinished(event.agent);
+  } else if (event.type === "review") {
+    showDraft(event);
+    return true;
+  } else if (event.type === "done") {
+    showApproved(event);
+    return true;
+  } else if (event.type === "error") {
+    showError(event.message);
+    return true;
+  }
+  return false;
+}
+
+// =========================================================
 // Planning the trip (calls POST /api/travel-stream)
 // =========================================================
+
+let currentMessage = "";    // the trip request (shown in the PDF)
+let currentThreadId = null; // the paused conversation the review buttons answer
 
 async function planTrip(message) {
   button.disabled = true;
   button.textContent = "Planning…";
   errorBox.hidden = true;
   result.hidden = true;
+  currentMessage = message;
+  currentThreadId = null;
   resetProgress();
 
   try {
@@ -470,50 +543,24 @@ async function planTrip(message) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
     });
-    if (!response.ok || !response.body) throw new Error(`Server error ${response.status}`);
 
-    // The server sends one line of JSON each time an agent finishes
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finished = false;
-
-    while (!finished) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop();  // last piece may be an incomplete line
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const event = JSON.parse(line);
-
-        if (event.type === "privacy") {
-          privacyDone(event.found);
-        } else if (event.type === "step" && event.agent === "guardrail_agent") {
-          guardrailPassed();
-        } else if (event.type === "blocked") {
-          guardrailBlocked(event.category);
-          renderNotice(event.message, event.category);
-          finished = true;
-        } else if (event.type === "plan") {
-          // The supervisor decided which agents to run
-          applyPlan(event.agents, event.reason);
-        } else if (event.type === "step") {
-          // This agent finished, so the next one in the plan is now working
-          agentFinished(event.agent);
-        } else if (event.type === "done") {
-          agentFinished("final_agent");
-          renderPlan(event.answer, event.llm_calls, message);
-          finished = true;
-        } else if (event.type === "error") {
-          showError(event.message);
-          finished = true;
-        }
+    const finished = await readEvents(response, (event) => {
+      if (event.type === "privacy") {
+        privacyDone(event.found);
+      } else if (event.type === "step" && event.agent === "guardrail_agent") {
+        guardrailPassed();
+      } else if (event.type === "blocked") {
+        guardrailBlocked(event.category);
+        renderNotice(event.message, event.category);
+        return true;
+      } else if (event.type === "plan") {
+        // The supervisor decided which agents to run
+        applyPlan(event.agents, event.reason);
+      } else {
+        return handleAgentEvent(event);
       }
-    }
+      return false;
+    });
 
     if (!finished) showError("The connection closed before the plan was ready. Please try again.");
   } catch (err) {
@@ -523,6 +570,108 @@ async function planTrip(message) {
     button.textContent = "Plan my trip";
   }
 }
+
+// =========================================================
+// Human review: approve the draft or ask for changes (calls POST /api/travel-review)
+// =========================================================
+
+// The graph paused after the final agent: the draft waits for the user
+function showDraft(event) {
+  currentThreadId = event.thread_id;
+  setStatus("human_review", "yours");
+  reviewReason.textContent = event.revisions
+    ? `Changes made (round ${event.revisions}), check them`
+    : "Waiting for your approval";
+
+  renderPlan(event.answer, event.llm_calls, currentMessage, false);
+
+  // After 3 rounds of changes, the plan can only be approved
+  reviewFeedback.value = "";
+  reviewFeedback.hidden = !event.can_change;
+  changeButton.hidden = !event.can_change;
+  reviewHint.textContent = event.can_change
+    ? "Approve it to download the PDF, or tell the crew what to change."
+    : "You've used all 3 rounds of changes, so this version can only be approved.";
+}
+
+// The user approved: the plan is final and can be downloaded
+function showApproved(event) {
+  currentThreadId = null;
+  setStatus("human_review", "done");
+  reviewReason.textContent = "Approved";
+  renderPlan(event.answer, event.llm_calls, currentMessage, true);
+}
+
+function showReviewNote(text) {
+  reviewNote.textContent = text;
+  reviewNote.hidden = false;
+}
+
+function setReviewBusy(busy, label = "") {
+  approveButton.disabled = busy;
+  changeButton.disabled = busy;
+  reviewFeedback.disabled = busy;
+  button.disabled = busy;  // no new trip while the crew is still working on this one
+  if (busy) showReviewNote(label);
+}
+
+async function sendReview(action) {
+  const feedback = reviewFeedback.value.trim();
+  if (action === "change" && !feedback) {
+    showReviewNote("Please write what should change first.");
+    reviewFeedback.focus();
+    return;
+  }
+  if (!currentThreadId) return;
+
+  errorBox.hidden = true;
+  if (action === "change") {
+    setReviewBusy(true, "The crew is updating your plan…");
+    // Only the agents that write the plan run again
+    runOrder = runOrder.includes("itinerary_agent") ? ["itinerary_agent", "final_agent"] : ["final_agent"];
+    setStatus("human_review", "waiting");
+    reviewReason.textContent = "Changes requested";
+    setStatus(runOrder[0], "active");
+  } else {
+    setReviewBusy(true, "Saving your approval…");
+  }
+
+  try {
+    const response = await fetch("/api/travel-review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: currentThreadId, action, feedback }),
+    });
+
+    const finished = await readEvents(response, (event) => {
+      if (event.type === "privacy") {
+        const summary = describePii(event.found);
+        if (summary) reviewReason.textContent = `Changes requested (masked ${summary})`;
+      } else if (event.type === "review_blocked") {
+        // The change request was refused: the draft is still waiting, nothing ran
+        runOrder.forEach((agent) => setStatus(agent, "done"));
+        setStatus("human_review", "yours");
+        reviewReason.textContent = "Change request not accepted";
+        setReviewBusy(false);
+        showReviewNote(event.message.replace(/\*/g, ""));
+        return true;
+      } else {
+        return handleAgentEvent(event);
+      }
+      return false;
+    });
+
+    if (!finished) showError("The connection closed before the plan was ready. Please try again.");
+  } catch (err) {
+    showError("Could not reach the TripCrew server. Is it still running?");
+  } finally {
+    setReviewBusy(false);
+  }
+}
+
+approveButton.addEventListener("click", () => sendReview("approve"));
+changeButton.addEventListener("click", () => sendReview("change"));
+reviewPanel.addEventListener("submit", (event) => event.preventDefault());
 
 // In the text box: Enter = plan the trip, Shift+Enter = new line
 input.addEventListener("keydown", (event) => {
